@@ -33,6 +33,16 @@ logger = logging.getLogger("codeguard.ai")
 
 _RATE_LIMIT_FALLBACK_COOLDOWN_SECONDS = 30.0
 _RATE_LIMIT_MAX_COOLDOWN_SECONDS = 60.0
+
+# Wall-clock budget for one AI-backed scan step: a single _chat_json call
+# including its token-budget retries, the forced-JSON pass, and the JSON repair
+# pass. The transport retries and waits out rate-limit cooldowns inside this
+# budget, and ScanExecutionService caps the same step with asyncio.wait_for() at
+# this budget plus a small grace. The two must stay in sync: when the outer cap
+# is smaller than the transport's own retry schedule, wait_for cancels a retry
+# sleep mid-flight and a rate-limited provider is reported as an unavailable
+# provider, which fails the review for a failure that would have recovered.
+AI_STEP_BUDGET_SECONDS = 75.0
 _COOLDOWN_WAIT_TASKS = {"explain", "fix_draft", "fix_retry", "fix_validate", "patch_validate", "final_patch"}
 _PROVIDER_REQUEST_LOCK = asyncio.Lock()
 _PROVIDER_NEXT_REQUEST_AT_BY_KEY: dict[str, float] = {}
@@ -590,12 +600,17 @@ class ScanAIClient(SecurityAnalysisAIClient):
             fallback_patch=remediation_draft.get("patch", {}),
         )
 
-    async def _chat_json(self, *, task_name: str, max_tokens: int, messages: list[dict]) -> dict:
+    async def _chat_json(self, *, task_name: str, max_tokens: int, messages: list[dict], deadline: float | None = None) -> dict:
         token_budgets = [max_tokens]
         expanded_budget = min(max(max_tokens * 2, 1536), 16384)
         if expanded_budget > max_tokens:
             token_budgets.append(expanded_budget)
         raw_responses: list[str] = []
+
+        # One deadline for the whole step: the token-budget retries, the forced
+        # JSON pass, and the repair pass all draw from the same budget so a step
+        # cannot drift past the cap ScanExecutionService enforces with wait_for.
+        step_deadline = deadline if deadline is not None else time.monotonic() + AI_STEP_BUDGET_SECONDS
 
         for token_budget in token_budgets:
             content = await self._chat_text(
@@ -603,6 +618,7 @@ class ScanAIClient(SecurityAnalysisAIClient):
                 max_tokens=token_budget,
                 messages=messages,
                 expect_json=True,
+                deadline=step_deadline,
             )
             if content:
                 raw_responses.append(content)
@@ -613,14 +629,20 @@ class ScanAIClient(SecurityAnalysisAIClient):
         # Some OpenAI-compatible providers ignore response_format and return fenced or prose-wrapped JSON.
         fallback_messages = _force_json_only_messages(messages)
         fallback_budget = min(max(max_tokens * 2, 1536), 16384)
-        content = await self._chat_text(task_name=task_name, max_tokens=fallback_budget, messages=fallback_messages, expect_json=False)
+        content = await self._chat_text(
+            task_name=task_name,
+            max_tokens=fallback_budget,
+            messages=fallback_messages,
+            expect_json=False,
+            deadline=step_deadline,
+        )
         if content:
             raw_responses.append(content)
         parsed = extract_json(content)
         if parsed:
             return parsed
 
-        repaired = await self._repair_json_response(task_name=task_name, messages=messages, raw_responses=raw_responses)
+        repaired = await self._repair_json_response(task_name=task_name, messages=messages, raw_responses=raw_responses, deadline=step_deadline)
         if repaired:
             return repaired
 
@@ -631,7 +653,7 @@ class ScanAIClient(SecurityAnalysisAIClient):
             failure_kind="output_format",
         )
 
-    async def _chat_text(self, *, task_name: str, max_tokens: int, messages: list[dict], expect_json: bool = False, target: _ProviderTarget | None = None) -> str:
+    async def _chat_text(self, *, task_name: str, max_tokens: int, messages: list[dict], expect_json: bool = False, target: _ProviderTarget | None = None, deadline: float | None = None) -> str:
         target = target or self._target_for_task(task_name)
         wait_for_cooldown = _should_wait_for_rate_limit_cooldown(task_name)
         payload = {
@@ -669,6 +691,10 @@ class ScanAIClient(SecurityAnalysisAIClient):
         else:
             total_rounds = max(1, int(self.retry_attempts))
         for round_index in range(total_rounds):
+            if _step_budget_exhausted(deadline):
+                # Out of step budget before this round even started: surface the
+                # real provider failure instead of letting the caller cancel us.
+                raise last_error or _step_budget_error(target)
             ordered_api_keys = self._ordered_api_keys(target)
             available_api_keys = [api_key for api_key in ordered_api_keys if _api_key_cooldown_seconds(api_key) <= 0]
             if available_api_keys:
@@ -684,9 +710,9 @@ class ScanAIClient(SecurityAnalysisAIClient):
                 }
                 try:
                     if wait_for_cooldown:
-                        await self._wait_for_rate_limit_cooldown(target, task_name=task_name, api_key=api_key)
-                    await self._wait_for_provider_slot(target, api_key=api_key, check_rate_limit=not wait_for_cooldown)
-                    async with httpx.AsyncClient(timeout=target.timeout_seconds) as client:
+                        await self._wait_for_rate_limit_cooldown(target, task_name=task_name, api_key=api_key, deadline=deadline)
+                    await self._wait_for_provider_slot(target, api_key=api_key, check_rate_limit=not wait_for_cooldown, deadline=deadline)
+                    async with httpx.AsyncClient(timeout=_attempt_timeout_seconds(target.timeout_seconds, deadline)) as client:
                         response = await client.post(url, json=payload, headers=headers)
                         response.raise_for_status()
                         body = response.json()
@@ -749,6 +775,12 @@ class ScanAIClient(SecurityAnalysisAIClient):
                 raise last_error
             delay_seconds = _retry_delay_seconds(last_error, self.retry_backoff_seconds * (2**round_index))
             if delay_seconds > 0:
+                if _step_budget_exhausted(deadline, extra_seconds=delay_seconds):
+                    # Sleeping would run past the step budget. Report the real
+                    # reason (rate-limit cooldown, provider timeout) now so the
+                    # caller can retry the step, instead of being cancelled
+                    # while asleep and blamed as an unavailable provider.
+                    raise last_error
                 await asyncio.sleep(delay_seconds)
 
         if body is None:
@@ -903,7 +935,7 @@ class ScanAIClient(SecurityAnalysisAIClient):
             enable_thinking=self.enable_thinking,
         )
 
-    async def _repair_json_response(self, *, task_name: str, messages: list[dict], raw_responses: list[str]) -> dict:
+    async def _repair_json_response(self, *, task_name: str, messages: list[dict], raw_responses: list[str], deadline: float | None = None) -> dict:
         if not raw_responses:
             return {}
 
@@ -917,6 +949,7 @@ class ScanAIClient(SecurityAnalysisAIClient):
             messages=repair_messages,
             expect_json=True,
             target=repair_target,
+            deadline=deadline,
         )
         return extract_json(content)
 
@@ -961,11 +994,16 @@ class ScanAIClient(SecurityAnalysisAIClient):
         self._runtime_metrics["rate_limit_responses"] = self._runtime_metrics.get("rate_limit_responses", 0) + 1
         self._runtime_events.append("AI provider key rate limit cooldown activated; other configured keys may continue handling requests.")
 
-    async def _wait_for_rate_limit_cooldown(self, target: _ProviderTarget, *, task_name: str, api_key: str | None = None) -> None:
+    async def _wait_for_rate_limit_cooldown(self, target: _ProviderTarget, *, task_name: str, api_key: str | None = None, deadline: float | None = None) -> None:
         remaining_seconds = _target_rate_limit_cooldown_seconds(target) if api_key is None else _api_key_cooldown_seconds(api_key)
         if remaining_seconds <= 0:
             return
         wait_seconds = min(remaining_seconds, _RATE_LIMIT_MAX_COOLDOWN_SECONDS)
+        if _step_budget_exhausted(deadline, extra_seconds=wait_seconds):
+            # Waiting out the cooldown would overrun the step budget. Report the
+            # cooldown with its real remaining time so the caller decides whether
+            # to retry the step, instead of blocking until it gets cancelled.
+            raise self._rate_limit_error(target, remaining_seconds)
         self._runtime_metrics["rate_limit_waits"] = self._runtime_metrics.get("rate_limit_waits", 0) + 1
         logger.info(
             "AI request waiting for provider rate-limit cooldown | task=%s provider=%s wait_seconds=%.2f",
@@ -975,7 +1013,7 @@ class ScanAIClient(SecurityAnalysisAIClient):
         )
         await asyncio.sleep(wait_seconds)
 
-    async def _wait_for_provider_slot(self, target: _ProviderTarget, *, api_key: str, check_rate_limit: bool = True) -> None:
+    async def _wait_for_provider_slot(self, target: _ProviderTarget, *, api_key: str, check_rate_limit: bool = True, deadline: float | None = None) -> None:
         while True:
             async with _PROVIDER_REQUEST_LOCK:
                 if check_rate_limit:
@@ -988,12 +1026,45 @@ class ScanAIClient(SecurityAnalysisAIClient):
                     return
 
             if wait_seconds > 0:
+                if _step_budget_exhausted(deadline, extra_seconds=wait_seconds):
+                    raise _step_budget_error(target)
                 logger.info(
                     "AI request throttled | provider=%s wait_seconds=%.2f",
                     target.provider_name,
                     wait_seconds,
                 )
                 await asyncio.sleep(wait_seconds)
+
+
+def _remaining_step_seconds(deadline: float | None) -> float | None:
+    if deadline is None:
+        return None
+    return deadline - time.monotonic()
+
+
+def _step_budget_exhausted(deadline: float | None, extra_seconds: float = 0.0) -> bool:
+    """True when the step budget cannot cover another wait of ``extra_seconds``."""
+    remaining = _remaining_step_seconds(deadline)
+    if remaining is None:
+        return False
+    return remaining - max(0.0, extra_seconds) <= 0
+
+
+def _attempt_timeout_seconds(configured_timeout: float, deadline: float | None) -> float:
+    """Clamp one HTTP attempt so it cannot outlive the remaining step budget."""
+    remaining = _remaining_step_seconds(deadline)
+    if remaining is None:
+        return configured_timeout
+    return max(1.0, min(configured_timeout, remaining))
+
+
+def _step_budget_error(target: _ProviderTarget) -> ExternalAIServiceError:
+    return ExternalAIServiceError(
+        _provider_timeout_message(target.provider_name),
+        provider=target.provider_name,
+        retryable=True,
+        failure_kind="timeout",
+    )
 
 
 def _should_wait_for_rate_limit_cooldown(task_name: str) -> bool:

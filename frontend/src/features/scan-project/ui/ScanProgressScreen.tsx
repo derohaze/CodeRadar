@@ -8,11 +8,32 @@ import {
 } from "@/components/ui/progress-bar";
 import type { ScanSessionDetail } from "@/shared/api/security";
 import { toAnalystCopy } from "@/shared/lib/analyst-copy";
-import { Loader } from "@/shared/ui/Loader";
+import { ThinkingOrb } from "@/shared/ui/ThinkingOrb";
+import type { ThinkingOrbState } from "@/shared/ui/thinking-orbs";
 
 interface ScanProgressScreenProps {
   session: ScanSessionDetail | null;
   onStop?: () => void;
+}
+
+// Each live phase maps to the orb animation that matches the kind of work in
+// flight, so the indicator shows the actual activity instead of a generic spinner.
+const ORB_STATE_BY_PHASE: Record<string, ThinkingOrbState> = {
+  Discovery: "working",
+  "Repository mapping": "searching",
+  Segmentation: "shaping",
+  "Path tracing": "composing",
+  "Reviewing paths": "solving",
+  Validation: "solving",
+  Scoring: "listening",
+  Completed: "listening",
+};
+
+function resolveOrbState(session: ScanSessionDetail | null, isFailed: boolean): ThinkingOrbState {
+  if (isFailed) return "listening";
+  const phase = session?.session.currentPhase;
+  if (!phase) return "working";
+  return ORB_STATE_BY_PHASE[phase] ?? "working";
 }
 
 export function ScanProgressScreen({ session, onStop }: ScanProgressScreenProps) {
@@ -48,6 +69,7 @@ export function ScanProgressScreen({ session, onStop }: ScanProgressScreenProps)
     stickToBottomRef.current = true;
   }, [session?.session.id]);
 
+  const orbState = resolveOrbState(session, Boolean(isFailed));
   const isCompleted = session?.session.status === "completed" || session?.session.status === "failed";
   const stageLines = useMemo(() => {
     if (!session) {
@@ -143,28 +165,30 @@ export function ScanProgressScreen({ session, onStop }: ScanProgressScreenProps)
 
   return (
     <div
-      className="hide-scrollbar flex min-h-0 flex-1 items-start justify-center overflow-y-auto bg-surface px-6 py-10 pb-16"
+      className="hide-scrollbar flex min-h-0 flex-1 items-start justify-center overflow-y-auto bg-surface px-6 py-8 pb-14"
     >
-      <div className="mx-auto flex w-full max-w-[860px] flex-col items-center">
-        <p className="text-center text-[13px] font-medium uppercase tracking-[0.16em] text-txt-tertiary">
+      <div className="mx-auto flex w-full max-w-[820px] flex-col items-center">
+        <ThinkingOrb state={orbState} size={64} paused={Boolean(isFailed)} decorative />
+
+        <p className="mt-3 text-center text-[12px] font-medium uppercase tracking-[0.16em] text-txt-tertiary">
           {isFailed ? "Review failed" : `Live ${scopeLabel} review`}
         </p>
-        <h2 className="mt-2 text-center text-[28px] font-semibold tracking-[-0.03em] text-txt-primary">
+        <h2 className="mt-2 text-center text-[26px] font-semibold tracking-[-0.03em] text-txt-primary">
           {isFailed ? "The review could not be completed" : `${reviewKindLabel} for issues`}
         </h2>
 
-        <p className="mt-3 max-w-[560px] text-center text-[14px] leading-7 text-txt-secondary">
+        <p className="mt-2.5 max-w-[560px] text-center text-[13.5px] leading-6 text-txt-secondary">
           {isFailed ? "Open Settings → Providers to verify the model and API key, then run the review again" : subLabel}
         </p>
         {isActive && onStop && (
-          <button onClick={onStop} className="mt-4 rounded-full border border-txt-tertiary/20 px-5 py-2 text-[12px] font-medium text-txt-secondary hover:bg-muted/50">Stop review</button>
+          <button onClick={onStop} className="mt-3.5 rounded-full border border-txt-tertiary/20 px-4 py-1.5 text-[12px] font-medium text-txt-secondary hover:bg-muted/50">Stop review</button>
         )}
 
-        <div className="mt-10 w-full">
+        <div className="mt-8 w-full">
           <ProgressBar value={animatedMetrics.actualProgress}>
             <ProgressBarHeader>
               <Label className="inline-flex items-center gap-2">
-                {!isFailed && isActive && <Loader variant="spin" className="size-3.5 text-txt-primary" />}
+                {!isFailed && isActive && <ThinkingOrb state={orbState} size={20} decorative />}
                 {isFailed ? "Code review failed" : `${scopeLabel} review in progress`}
               </Label>
               <ProgressBarValue />
@@ -177,7 +201,7 @@ export function ScanProgressScreen({ session, onStop }: ScanProgressScreenProps)
         </div>
 
         {session && (
-          <div className="mt-3 w-full rounded-lg border bg-card px-4 py-4" style={{ borderColor: "hsl(var(--border-soft))" }}>
+          <div className="mt-3 w-full rounded-xl border bg-card px-4 py-3.5" style={{ borderColor: "hsl(var(--border-soft))" }}>
             <div className="flex items-center justify-between gap-4">
               <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-txt-tertiary">
                 Current Phase Progress
@@ -186,20 +210,20 @@ export function ScanProgressScreen({ session, onStop }: ScanProgressScreenProps)
                 {animatedMetrics.phaseProgress}% of {session.session.currentPhase.toLowerCase()}
               </p>
             </div>
-            <div className="mt-3 h-2 overflow-hidden rounded-md bg-[#e5e5e5]">
+            <div className="mt-2.5 h-1.5 overflow-hidden rounded-md bg-[#e5e5e5]">
               <div
                 className="h-full rounded-md bg-primary"
                 style={{ width: `${animatedMetrics.phaseProgress}%` }}
               />
             </div>
-            <p className="mt-3 text-xs leading-5 text-txt-secondary">
+            <p className="mt-2.5 text-xs leading-5 text-txt-secondary">
               {describePhaseCounters(session.session.currentPhase, animatedMetrics)}
             </p>
           </div>
         )}
 
         {session && (
-          <div className={`mt-4 grid w-full gap-2.5 ${session.session.targetType === "file" ? "sm:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-4"}`}>
+          <div className={`mt-3 grid w-full gap-2 ${session.session.targetType === "file" ? "sm:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-4"}`}>
             <ProgressInfoCard
               label="Mode and phase"
               value={session.session.scanMode === "deep" ? "Deep review" : "Fast review"}
@@ -228,18 +252,18 @@ export function ScanProgressScreen({ session, onStop }: ScanProgressScreenProps)
         )}
 
         <div
-          className="mt-6 w-full overflow-hidden rounded-[22px] border bg-card"
+          className="mt-4 w-full overflow-hidden rounded-2xl border bg-card"
           style={{ borderColor: "hsl(var(--border-soft))" }}
         >
-          <div ref={logContainerRef} className="hide-scrollbar max-h-[360px] min-h-[220px] overflow-y-auto px-5 py-5">
-            <div className="space-y-2.5">
+          <div ref={logContainerRef} className="hide-scrollbar max-h-[320px] min-h-[200px] overflow-y-auto px-5 py-4">
+            <div className="space-y-2">
               {visibleStageLines.map((line, index) => (
                 <div
                   key={`stage-line-${index}`}
-                  className="flex items-start gap-3 text-[13.5px] leading-6 text-txt-secondary"
+                  className="flex items-start gap-3 text-[13px] leading-6 text-txt-secondary"
                 >
                   {index === visibleStageLines.length - 1 && !isFailed ? (
-                    <Loader variant="spin" className="mt-[5px] size-3 shrink-0 text-txt-tertiary" />
+                    <ThinkingOrb state={orbState} size={20} className="mt-0.5 shrink-0" decorative />
                   ) : (
                     <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-txt-tertiary" />
                   )}
@@ -273,9 +297,9 @@ function ProgressInfoCard({
   note: string;
 }) {
   return (
-    <div className="flex min-h-[96px] flex-col overflow-hidden rounded-[20px] border bg-card px-4 py-3.5 shadow-[0_8px_18px_rgba(0,0,0,0.025)]" style={{ borderColor: "hsl(var(--border-soft))" }}>
+    <div className="flex min-h-[84px] flex-col overflow-hidden rounded-xl border bg-card px-3.5 py-3 shadow-[0_8px_18px_rgba(0,0,0,0.025)]" style={{ borderColor: "hsl(var(--border-soft))" }}>
       <p className="truncate text-[10px] font-medium uppercase tracking-[0.14em] text-txt-tertiary">{label}</p>
-      <p className="mt-2 truncate text-[13px] font-semibold leading-5 text-txt-primary" title={value}>{value}</p>
+      <p className="mt-1.5 truncate text-[12.5px] font-semibold leading-5 text-txt-primary" title={value}>{value}</p>
       <p className="mt-1 line-clamp-2 overflow-hidden text-xs leading-5 text-txt-secondary" title={note}>{note}</p>
     </div>
   );

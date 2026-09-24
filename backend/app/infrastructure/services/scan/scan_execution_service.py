@@ -15,6 +15,7 @@ from app.domain.repositories.scan_repository import ScanSessionRepository
 from app.domain.services.ai_client import SecurityAnalysisAIClient
 from app.infrastructure.ai.agents.detection_agent import DetectionAgent
 from app.infrastructure.ai.provider_factory import build_ai_client_from_runtime_config
+from app.infrastructure.ai.scan_client import AI_STEP_BUDGET_SECONDS
 from app.infrastructure.services.workflow.workflow_persistence import WorkflowPersistenceService
 from app.infrastructure.services.scan.coverage_calculation import build_progress_state, calculate_progress_metrics
 from app.infrastructure.services.scan.duplicate_clustering import cluster_findings
@@ -62,6 +63,14 @@ logger = logging.getLogger("codeguard.scan")
 # The debate lane is three model passes back to back. Cap it so a slow provider
 # degrades the review instead of stalling the scan.
 CODE_REVIEW_DEBATE_TIMEOUT_SECONDS = 96.0
+
+# Hard cap for one AI-backed scan step, on top of the transport's own
+# AI_STEP_BUDGET_SECONDS deadline. The transport stops retrying on its deadline
+# and reports the real provider failure; this cap is only a last-resort guard so
+# a transport bug cannot stall a review forever. It must stay above the budget,
+# otherwise wait_for cancels a retry mid-flight and turns a recoverable provider
+# rate limit into a failed review.
+AI_STEP_TIMEOUT_SECONDS = AI_STEP_BUDGET_SECONDS + 5.0
 
 _TITLE_STOPWORDS = frozenset(
     {
@@ -484,7 +493,7 @@ class ScanExecutionService:
                             },
                             preset=session.preset,
                         ),
-                        timeout=32.0,
+                        timeout=AI_STEP_TIMEOUT_SECONDS,
                     )
                     self._append_runtime_events(logs, ai_client)
                 except (ExternalAIServiceError, asyncio.TimeoutError) as exc:
@@ -714,7 +723,7 @@ class ScanExecutionService:
                             total_batches=total_batches,
                             preset=session.preset,
                         ),
-                        timeout=32.0,
+                        timeout=AI_STEP_TIMEOUT_SECONDS,
                     )
                     self._append_runtime_events(logs, ai_client)
                     if review.get("review_note"):

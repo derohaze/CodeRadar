@@ -197,6 +197,11 @@
   .app-no-drag {
     -webkit-app-region: no-drag;
   }
+  /* The thinking-orb renderer sets the canvas dimensions inline; this keeps it
+     from sitting on the text baseline when it lands inside a text row. */
+  [data-thinking-orb] {
+    display: block;
+  }
 }
 
 /* Dark-mode remap for hardcoded light hex tiles used across screens.

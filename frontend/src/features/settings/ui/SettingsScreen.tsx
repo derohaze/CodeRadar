@@ -120,7 +120,7 @@ export function SettingsScreen({ onBack, settings, onPatchSettings, isSaving, is
         }`}
       >
         <div className="hide-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto bg-[#121212]">
-          <div className="mx-auto flex w-full max-w-[860px] flex-col gap-5 px-8 py-7">
+          <div className="mx-auto flex w-full max-w-[820px] flex-col gap-4 px-7 py-6">
             {activeTab === "general" ? (
               <GeneralTab settings={settings} onPatchSettings={onPatchSettings} isSaving={isSaving} />
             ) : (
@@ -138,19 +138,19 @@ function GeneralTab({ settings, onPatchSettings, isSaving }: { settings: Runtime
     <>
       <div className="flex items-center justify-between gap-6">
         <div>
-          <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-white">General</h2>
+          <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-white">General</h2>
           <p className="mt-1 h-4 text-[11px] text-white/40" aria-live="polite">{isSaving ? "Saving settings…" : "\u00a0"}</p>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[16px] border border-white/[0.06] bg-[#1e1e1e]">
-        <div className="border-b border-white/[0.06] px-4 py-4">
-          <div className="mb-3">
-            <p className="text-[13px] font-medium text-white">Review preset</p>
-            <p className="mt-1 text-[12.5px] leading-5 text-white/55">Choose the default posture for new review sessions</p>
+      <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-[#1e1e1e]">
+        <div className="border-b border-white/[0.06] px-3.5 py-3.5">
+          <div className="mb-2.5">
+            <p className="text-[12.5px] font-medium text-white">Review preset</p>
+            <p className="mt-0.5 text-[12px] leading-5 text-white/55">Choose the default posture for new review sessions</p>
           </div>
 
-          <div className="grid gap-2.5 md:grid-cols-3">
+          <div className="grid gap-2 md:grid-cols-3">
             {scanPresets.map((preset) => {
               const active = settings.defaultPreset === preset.id;
               return (
@@ -162,19 +162,19 @@ function GeneralTab({ settings, onPatchSettings, isSaving }: { settings: Runtime
                       defaultScanMode: preset.defaultMode,
                     });
                   }}
-                  className={`group rounded-xl border px-3.5 py-3.5 text-left transition-colors ${
+                  className={`group rounded-xl border px-3 py-3 text-left transition-colors ${
                     active
                       ? "bg-[#2a241e] border-[#c9a86a]/25 shadow-[0_0_0_1px_rgba(201,168,106,0.12)]"
                       : "bg-[#232323] border-white/[0.06] hover:bg-[#262626] hover:border-white/[0.08]"
                   }`}
                 >
                   <div className="flex items-center gap-2 text-white">
-                    <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${active ? "bg-white/[0.08] text-white" : "bg-white/[0.06] text-white/70"}`}>
-                      <HugeiconsIcon icon={preset.icon} size={13} strokeWidth={1.7} color="currentColor" />
+                    <div className={`flex h-6 w-6 items-center justify-center rounded-md ${active ? "bg-white/[0.08] text-white" : "bg-white/[0.06] text-white/70"}`}>
+                      <HugeiconsIcon icon={preset.icon} size={12} strokeWidth={1.7} color="currentColor" />
                     </div>
-                    <span className="text-[12.5px] font-medium">{preset.label}</span>
+                    <span className="text-[12px] font-medium">{preset.label}</span>
                   </div>
-                  <p className="mt-2.5 text-[12px] leading-5 text-white/55">{preset.description}</p>
+                  <p className="mt-2 text-[11.5px] leading-4 text-white/55">{preset.description}</p>
                 </button>
               );
             })}
@@ -217,30 +217,30 @@ function GeneralTab({ settings, onPatchSettings, isSaving }: { settings: Runtime
         />
       </div>
 
-      <div className="overflow-hidden rounded-[16px] border border-white/[0.06] bg-[#1e1e1e]">
-        <div className="px-4 py-4">
-          <div className="mb-3">
-            <p className="text-[13px] font-medium text-white">Appearance</p>
-            <p className="mt-1 text-[12.5px] leading-5 text-white/55">Choose a look for the app — System follows your device</p>
+      <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-[#1e1e1e]">
+        <div className="px-3.5 py-3.5">
+          <div className="mb-2.5">
+            <p className="text-[12.5px] font-medium text-white">Appearance</p>
+            <p className="mt-0.5 text-[12px] leading-5 text-white/55">Choose a look for the app — System follows your device</p>
           </div>
 
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-3 gap-2">
             {themeOptions.map((option) => {
               const active = settings.theme === option.value;
               return (
                 <button
                   key={option.value}
                   onClick={() => void onPatchSettings({ theme: option.value })}
-                  className={`group flex flex-col items-center gap-2 rounded-xl border px-3 py-3.5 transition-colors ${
+                  className={`group flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 transition-colors ${
                     active
                       ? "bg-[#2a241e] border-[#c9a86a]/25 shadow-[0_0_0_1px_rgba(201,168,106,0.12)]"
                       : "bg-[#232323] border-white/[0.06] hover:bg-[#262626] hover:border-white/[0.08]"
                   }`}
                 >
-                  <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${active ? "bg-white/[0.08] text-white" : "bg-white/[0.06] text-white/70"}`}>
-                    <option.icon size={14} strokeWidth={1.7} />
+                  <div className={`flex h-6 w-6 items-center justify-center rounded-md ${active ? "bg-white/[0.08] text-white" : "bg-white/[0.06] text-white/70"}`}>
+                    <option.icon size={13} strokeWidth={1.7} />
                   </div>
-                  <span className="text-[12.5px] font-medium text-white">{option.label}</span>
+                  <span className="text-[12px] font-medium text-white">{option.label}</span>
                 </button>
               );
             })}
@@ -411,19 +411,18 @@ function ProvidersTab({ settings, onPatchSettings, onBack }: { settings: Runtime
   return (
     <>
       <div>
-        <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-white">Providers</h2>
-        <p className="mt-1 text-[12.5px] leading-5 text-white/55">
-          Choose a ready provider, paste your key, test the connection, then pick a model each with its own folder and isolated integration
+        <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-white">Providers</h2>
+        <p className="mt-1 text-[12px] leading-5 text-white/55">
+          Pick a provider, paste your key, test the connection, then choose a model
         </p>
-        <div className="mt-1 h-4" aria-hidden="true" />
         {settings.aiProvider && (
-          <p className="mt-2 text-[12px] text-white/40">
+          <p className="mt-2 text-[11.5px] text-white/40">
             Active: <span className="text-white/80">{settings.aiProvider}</span> {settings.aiModel && <>· <span className="text-white/80">{settings.aiModel}</span></>} {settings.aiApiKeyMasked && <>· <span className="text-white/40">{settings.aiApiKeyMasked}</span></>}
           </p>
         )}
       </div>
 
-      <div className="overflow-hidden rounded-[12px] border border-white/[0.06] bg-[#1e1e1e]">
+      <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-[#1e1e1e]">
         {(providers.length > 0 ? providers : FALLBACK_PROVIDERS).map((p) => {
           const active = selected === p.id;
           const isStoredActive = settings.aiProvider === p.id;
@@ -436,34 +435,31 @@ function ProvidersTab({ settings, onPatchSettings, onBack }: { settings: Runtime
                 setModels([]);
                 if (p.id !== "custom") setBaseUrl("");
               }}
-              className={`flex w-full items-center gap-3 border-b border-white/[0.06] px-4 py-3 text-left transition-colors last:border-b-0 ${
-                active ? "bg-[#2a241e] border-l-2 border-l-[#c9a86a] pl-[14px]" : "hover:bg-white/[0.03]"
+              className={`flex w-full items-center gap-2.5 border-b border-white/[0.06] px-3 py-2 text-left transition-colors last:border-b-0 ${
+                active ? "bg-[#2a241e] border-l-2 border-l-[#c9a86a] pl-[10px]" : "hover:bg-white/[0.03]"
               }`}
             >
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${active ? "bg-white/[0.08] text-white" : "bg-white/[0.06] text-white/50"}`}>
-                <span className="text-[11px] font-semibold">{p.name.slice(0, 2).toUpperCase()}</span>
+              <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${active ? "bg-white/[0.08] text-white" : "bg-white/[0.06] text-white/50"}`}>
+                <span className="text-[9.5px] font-semibold tracking-wide">{p.name.slice(0, 2).toUpperCase()}</span>
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium leading-none text-white">{p.name}</p>
-                <p className="mt-1 truncate text-[11px] leading-none text-white/40">{p.defaultBaseUrl || "Custom URL required"}</p>
-              </div>
+              <p className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-white">{p.name}</p>
               <div className="flex shrink-0 items-center gap-2">
-                {isStoredActive && <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">Active</span>}
-                {active && <span className="text-[12px] text-amber-400">✓</span>}
-                <span className="text-[14px] text-white/20">›</span>
+                {isStoredActive && <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9.5px] font-medium text-emerald-400">Active</span>}
+                {active && <span className="text-[11px] text-amber-400">✓</span>}
+                <span className="text-[13px] text-white/20">›</span>
               </div>
             </button>
           );
         })}
       </div>
 
-      <div className="overflow-hidden rounded-[16px] border border-white/[0.06] bg-[#1e1e1e]">
-        <div className="border-b border-white/[0.06] px-4 py-3">
-          <p className="text-[13px] font-medium text-white">{currentProvider?.name || "Custom"} settings</p>
-          <p className="mt-1 text-[12px] text-white/50">Paste your key, test, then choose a model — keys are encrypted before storage</p>
+      <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-[#1e1e1e]">
+        <div className="border-b border-white/[0.06] px-3.5 py-2.5">
+          <p className="text-[12.5px] font-medium text-white">{currentProvider?.name || "Custom"} settings</p>
+          <p className="mt-0.5 text-[11.5px] text-white/50">Paste your key, test, then choose a model — keys are encrypted before storage</p>
         </div>
 
-        <div className="space-y-3 p-4">
+        <div className="space-y-2.5 p-3.5">
           {isCustom && (
             <div>
               <label className="text-[11px] font-medium tracking-wide text-white/60">Company / Provider Name</label>
@@ -471,7 +467,7 @@ function ProvidersTab({ settings, onPatchSettings, onBack }: { settings: Runtime
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
                 placeholder="e.g. MyCompany, Acme AI"
-                className="mt-1.5 w-full rounded-lg border border-white/10 bg-[#2a2a2a] px-3 py-2 text-[12.5px] text-white placeholder:text-white/30 focus:border-white/20 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-white/10 bg-[#2a2a2a] px-2.5 py-1.5 text-[12px] text-white placeholder:text-white/30 focus:border-white/20 focus:outline-none"
               />
               <p className="mt-1 text-[11px] text-white/35">Name for your custom OpenAI-compatible provider</p>
             </div>
@@ -483,7 +479,7 @@ function ProvidersTab({ settings, onPatchSettings, onBack }: { settings: Runtime
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={settings.aiHasKey && settings.aiProvider === selected ? `Stored: ${settings.aiApiKeyMasked} — enter new to replace` : "sk-... or your provider key"}
-              className="mt-1.5 w-full rounded-lg border border-white/10 bg-[#2a2a2a] px-3 py-2 text-[12.5px] text-white placeholder:text-white/30 focus:border-white/20 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-white/10 bg-[#2a2a2a] px-2.5 py-1.5 text-[12px] text-white placeholder:text-white/30 focus:border-white/20 focus:outline-none"
             />
           </div>
 
@@ -495,87 +491,87 @@ function ProvidersTab({ settings, onPatchSettings, onBack }: { settings: Runtime
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder={currentProvider?.defaultBaseUrl || "https://api.example.com/v1"}
-              className="mt-1.5 w-full rounded-lg border border-white/10 bg-[#2a2a2a] px-3 py-2 text-[12.5px] text-white placeholder:text-white/30 focus:border-white/20 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-white/10 bg-[#2a2a2a] px-2.5 py-1.5 text-[12px] text-white placeholder:text-white/30 focus:border-white/20 focus:outline-none"
             />
             {isCustom && <p className="mt-1 text-[11px] text-white/35">Custom OpenAI-compatible endpoint, e.g. https://your-proxy.com/v1</p>}
           </div>
 
           <div>
             <label className="text-[11px] font-medium tracking-wide text-white/60">Model</label>
-            <div className="mt-1.5 flex gap-2">
+            <div className="mt-1 flex gap-1.5">
               <input
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 placeholder={isCustom ? "model-id e.g. my-model-1" : "Select or type model id"}
-                className="flex-1 rounded-lg border border-white/10 bg-[#2a2a2a] px-3 py-2 text-[12.5px] text-white placeholder:text-white/30 focus:border-white/20 focus:outline-none"
+                className="flex-1 rounded-lg border border-white/10 bg-[#2a2a2a] px-2.5 py-1.5 text-[12px] text-white placeholder:text-white/30 focus:border-white/20 focus:outline-none"
               />
               <button
                 onClick={handleFetchModels}
-                className="shrink-0 rounded-lg border border-white/10 bg-[#2a2a2a] px-3 py-2 text-[12px] font-medium text-white/80 hover:bg-[#303030] hover:text-white"
+                className="shrink-0 rounded-lg border border-white/10 bg-[#2a2a2a] px-2.5 py-1.5 text-[11.5px] font-medium text-white/80 hover:bg-[#303030] hover:text-white"
               >
                 List
               </button>
             </div>
             {models.length > 0 && (
-              <div className="mt-2 overflow-hidden rounded-lg border border-white/10 bg-[#232323]">
+              <div className="mt-1.5 overflow-hidden rounded-lg border border-white/10 bg-[#232323]">
                 <input
                   value={modelQuery}
                   onChange={(e) => setModelQuery(e.target.value)}
                   placeholder="Type to filter models…"
                   autoComplete="off"
-                  className="w-full border-b border-white/10 bg-transparent px-3 py-2 text-[12.5px] text-white placeholder:text-white/30 focus:outline-none"
+                  className="w-full border-b border-white/10 bg-transparent px-2.5 py-1.5 text-[12px] text-white placeholder:text-white/30 focus:outline-none"
                 />
                 {filteredModels.length > 0 ? (
-                  <div className="max-h-[200px] overflow-y-auto p-1">
+                  <div className="max-h-[180px] overflow-y-auto p-1">
                     {filteredModels.map((m) => (
                       <button
                         key={m.id}
                         onClick={() => { setModel(m.id); setModelQuery(""); }}
                         title={m.id}
-                        className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-[12px] ${model === m.id ? "bg-white/[0.08] text-white" : "text-white/70 hover:bg-white/[0.04] hover:text-white"}`}
+                        className={`flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-[11.5px] ${model === m.id ? "bg-white/[0.08] text-white" : "text-white/70 hover:bg-white/[0.04] hover:text-white"}`}
                       >
                         <span className="truncate">{m.id}</span>
-                        {m.name !== m.id ? <span className="ml-2 shrink-0 text-[11px] text-white/30">{m.name.slice(0, 20)}</span> : null}
+                        {m.name !== m.id ? <span className="ml-2 shrink-0 text-[10.5px] text-white/30">{m.name.slice(0, 20)}</span> : null}
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div className="px-3 py-2 text-[12px] text-white/40">No models match “{modelQuery.trim()}”</div>
+                  <div className="px-2.5 py-1.5 text-[11.5px] text-white/40">No models match “{modelQuery.trim()}”</div>
                 )}
               </div>
             )}
           </div>
 
           {testState.message && (
-            <div className={`rounded-lg border px-3 py-2 text-[12px] ${testState.ok ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : testState.ok === false ? "border-red-500/20 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-white/60"}`}>
+            <div className={`rounded-lg border px-2.5 py-1.5 text-[11.5px] ${testState.ok ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : testState.ok === false ? "border-red-500/20 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-white/60"}`}>
               {testState.message}
             </div>
           )}
 
-          <div className="flex gap-2 pt-1">
+          <div className="flex gap-1.5 pt-0.5">
             <button
               onClick={handleTest}
               disabled={testState.loading}
-              className="flex-1 rounded-lg border border-white/10 bg-[#2a2a2a] px-4 py-2 text-[12.5px] font-medium text-white hover:bg-[#303030] disabled:opacity-50"
+              className="flex-1 rounded-lg border border-white/10 bg-[#2a2a2a] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[#303030] disabled:opacity-50"
             >
               {testState.loading ? "Testing…" : "Test connection"}
             </button>
             <button
               onClick={handleSave}
               disabled={saveLoading}
-              className="flex-1 rounded-lg bg-white px-4 py-2 text-[12.5px] font-medium text-black hover:bg-white/90 disabled:opacity-50"
+              className="flex-1 rounded-lg bg-white px-3 py-1.5 text-[12px] font-medium text-black hover:bg-white/90 disabled:opacity-50"
             >
               {saveLoading ? "Saving…" : "Save provider"}
             </button>
           </div>
           {settings.aiHasKey && (
-            <button onClick={handleDisconnect} disabled={saveLoading} className="w-full rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-[12.5px] font-medium text-red-300 hover:bg-red-500/15 disabled:opacity-50">
+            <button onClick={handleDisconnect} disabled={saveLoading} className="w-full rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-[12px] font-medium text-red-300 hover:bg-red-500/15 disabled:opacity-50">
               Disconnect provider
             </button>
           )}
 
           <p className="text-[11px] leading-4 text-white/30">
-            Test does a live call to <span className="text-white/50">{currentProvider?.defaultBaseUrl || baseUrl || "your URL"}</span> — no fake data, and the key is encrypted with Fernet before storage
+            Test runs a live call to the selected provider — no fake data, and the key is encrypted with Fernet before storage
           </p>
         </div>
       </div>
@@ -595,10 +591,10 @@ function SettingsRow({
   border?: boolean;
 }) {
   return (
-    <div className={`flex items-center justify-between gap-6 px-4 py-3.5 ${border ? "border-b border-white/[0.06]" : ""}`}>
+    <div className={`flex items-center justify-between gap-6 px-3.5 py-3 ${border ? "border-b border-white/[0.06]" : ""}`}>
       <div className="min-w-0 pr-4">
-        <p className="text-[13px] font-medium leading-none text-white">{title}</p>
-        <p className="mt-1.5 text-[12.5px] leading-5 text-white/55">{description}</p>
+        <p className="text-[12.5px] font-medium leading-none text-white">{title}</p>
+        <p className="mt-1 text-[12px] leading-5 text-white/55">{description}</p>
       </div>
       <div className="shrink-0">{control}</div>
     </div>
@@ -606,8 +602,8 @@ function SettingsRow({
 }
 
 const selectClassName =
-  "h-8 w-[152px] rounded-lg border border-white/10 bg-[#2a2a2a] text-[12.5px] font-medium text-white hover:bg-[#303030] focus:ring-0 focus:ring-offset-0 data-[placeholder]:text-white/60";
+  "h-7 w-[140px] rounded-lg border border-white/10 bg-[#2a2a2a] text-[12px] font-medium text-white hover:bg-[#303030] focus:ring-0 focus:ring-offset-0 data-[placeholder]:text-white/60";
 
 const selectContentClassName = "rounded-xl border border-white/10 bg-[#232323] text-white shadow-[0_16px_32px_rgba(0,0,0,0.5)]";
 
-const selectItemClassName = "rounded-md text-[12.5px] focus:bg-white/[0.06] focus:text-white";
+const selectItemClassName = "rounded-md text-[12px] focus:bg-white/[0.06] focus:text-white";
