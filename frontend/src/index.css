@@ -8,118 +8,119 @@
   :root {
     color-scheme: dark;
 
+    /* Premium graphite — keep pure black base, cool blue-gray surfaces for harmony */
     --background: 0 0% 8%;
-    --foreground: 0 0% 93%;
+    --foreground: 240 10% 94%;
 
-    --card: 0 0% 20%;
-    --card-foreground: 0 0% 93%;
+    --card: 240 6% 13%;
+    --card-foreground: 240 10% 94%;
 
-    --popover: 0 0% 16%;
-    --popover-foreground: 0 0% 93%;
+    --popover: 240 7% 12%;
+    --popover-foreground: 240 10% 94%;
 
-    --primary: 0 0% 94%;
-    --primary-foreground: 0 0% 14%;
+    --primary: 240 8% 96%;
+    --primary-foreground: 0 0% 7%;
 
-    --secondary: 0 0% 22%;
-    --secondary-foreground: 0 0% 93%;
+    --secondary: 240 5% 15.5%;
+    --secondary-foreground: 240 8% 88%;
 
-    --muted: 0 0% 21%;
-    --muted-foreground: 0 0% 60%;
+    --muted: 240 5% 14.5%;
+    --muted-foreground: 240 4% 62%;
 
-    --accent: 0 0% 28%;
-    --accent-foreground: 0 0% 94%;
+    --accent: 263 10% 21%;
+    --accent-foreground: 240 10% 95%;
 
-    --destructive: 358 45% 56%;
+    --destructive: 352 72% 62%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 24%;
-    --input: 0 0% 24%;
-    --ring: 0 0% 48%;
+    --border: 240 5% 17%;
+    --input: 240 5% 17%;
+    --ring: 263 60% 65%;
 
     --radius: 0.75rem;
 
-    /* Custom tokens — bar/sidebar darkest, pages lighter for contrast */
-    --workspace: 0 0% 9%;
-    --surface: 0 0% 17%;
-    --surface-sidebar: 0 0% 11%;
-    --surface-secondary: 0 0% 22%;
-    --surface-code: 0 0% 14%;
-    --surface-dot: 0 0% 26%;
+    /* Custom tokens — pure black chrome (as requested) + cool premium surfaces */
+    --workspace: 0 0% 7%;
+    --surface: 240 6% 12.5%;
+    --surface-sidebar: 0 0% 6.5%;
+    --surface-secondary: 240 5% 15%;
+    --surface-code: 240 6% 10.5%;
+    --surface-dot: 240 4% 24%;
 
-    --text-primary: 0 0% 93%;
-    --text-secondary: 0 0% 66%;
-    --text-tertiary: 0 0% 50%;
-    --text-placeholder: 0 0% 40%;
+    --text-primary: 240 12% 94%;
+    --text-secondary: 240 6% 68%;
+    --text-tertiary: 240 4% 54%;
+    --text-placeholder: 240 4% 42%;
 
-    --border-primary: 0 0% 26%;
-    --border-soft: 0 0% 21%;
+    --border-primary: 240 4% 20%;
+    --border-soft: 240 5% 15.5%;
 
-    --status-success: 150 28% 52%;
-    --status-success-bg: 150 28% 15%;
-    --status-critical: 358 62% 62%;
-    --status-critical-bg: 358 50% 15%;
-    --status-high: 38 78% 60%;
-    --status-high-bg: 38 45% 16%;
-    --status-progress: 210 45% 62%;
-    --status-disabled: 0 0% 42%;
+    --status-success: 152 55% 52%;
+    --status-success-bg: 152 40% 12%;
+    --status-critical: 352 74% 60%;
+    --status-critical-bg: 352 45% 13%;
+    --status-high: 38 88% 60%;
+    --status-high-bg: 38 48% 13%;
+    --status-progress: 239 68% 65%;
+    --status-disabled: 240 4% 46%;
   }
 
-  /* Light theme — Claude-style neutral palette (beige sidebar, white content). */
+  /* Light theme — pure white (no blue) */
   :root[data-theme="light"] {
     color-scheme: light;
 
-    --background: 40 18% 97.5%;
-    --foreground: 0 0% 13%;
+    --background: 0 0% 100%;
+    --foreground: 0 0% 12%;
 
-    --card: 40 24% 98%;
-    --card-foreground: 0 0% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 12%;
 
-    --popover: 40 24% 98%;
-    --popover-foreground: 0 0% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 12%;
 
-    --primary: 0 0% 12%;
+    --primary: 0 0% 10%;
     --primary-foreground: 0 0% 98%;
 
-    --secondary: 40 14% 93%;
-    --secondary-foreground: 0 0% 22%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 18%;
 
-    --muted: 40 14% 93%;
+    --muted: 0 0% 96%;
     --muted-foreground: 0 0% 44%;
 
-    --accent: 40 14% 90%;
-    --accent-foreground: 0 0% 14%;
+    --accent: 0 0% 95%;
+    --accent-foreground: 0 0% 12%;
 
-    --destructive: 358 60% 52%;
+    --destructive: 0 72% 52%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 40 10% 86%;
-    --input: 40 10% 82%;
-    --ring: 0 0% 58%;
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    --ring: 0 0% 42%;
 
-    /* Custom tokens — the chrome stays slightly darker than the warm page */
-    --workspace: 40 18% 95%;
-    --surface: 40 24% 97%;
-    --surface-sidebar: 40 18% 92%;
-    --surface-secondary: 40 14% 94.5%;
-    --surface-code: 40 16% 95.5%;
-    --surface-dot: 40 8% 84%;
+    /* Pure white — bar = sidebar = cell */
+    --workspace: 0 0% 100%;
+    --surface: 0 0% 100%;
+    --surface-sidebar: 0 0% 100%;
+    --surface-secondary: 0 0% 100%;
+    --surface-code: 0 0% 100%;
+    --surface-dot: 0 0% 86%;
 
-    --text-primary: 0 0% 14%;
-    --text-secondary: 0 0% 41%;
-    --text-tertiary: 0 0% 50%;
-    --text-placeholder: 0 0% 56%;
+    --text-primary: 0 0% 11%;
+    --text-secondary: 0 0% 38%;
+    --text-tertiary: 0 0% 52%;
+    --text-placeholder: 0 0% 64%;
 
     --border-primary: 0 0% 84%;
-    --border-soft: 0 0% 89%;
+    --border-soft: 0 0% 88%;
 
-    --status-success: 150 35% 34%;
-    --status-success-bg: 150 45% 94%;
-    --status-critical: 358 65% 52%;
-    --status-critical-bg: 358 70% 95%;
-    --status-high: 38 70% 36%;
-    --status-high-bg: 38 80% 93%;
-    --status-progress: 210 60% 46%;
-    --status-disabled: 0 0% 55%;
+    --status-success: 152 60% 34%;
+    --status-success-bg: 152 55% 95%;
+    --status-critical: 0 68% 52%;
+    --status-critical-bg: 0 75% 96%;
+    --status-high: 38 85% 42%;
+    --status-high-bg: 38 85% 95%;
+    --status-progress: 212 70% 50%;
+    --status-disabled: 0 0% 64%;
   }
 
   :root[data-surface-contrast="standard"] {
@@ -205,80 +206,78 @@
 }
 
 /* Dark-mode remap for hardcoded light hex tiles used across screens.
-   Kept as explicit overrides so the whole UI stays dark without touching
-the many feature files that use arbitrary-value colors. */
+   Premium cool graphite remap — same lightness, 240 hue for harmony. */
 @layer utilities {
-  /* neutral light grays -> dark surfaces */
-  .bg-\[\#f7f7f7\] { background-color: hsl(0 0% 22%); }
-  .bg-\[\#f4f4f5\] { background-color: hsl(0 0% 20%); }
-  .bg-\[\#eeeeee\] { background-color: hsl(0 0% 24%); }
-  .bg-\[\#f0f0f0\] { background-color: hsl(0 0% 25%); }
-  .bg-\[\#f2f2f2\] { background-color: hsl(0 0% 23%); }
-  .bg-\[\#e5e5e5\] { background-color: hsl(0 0% 26%); }
-  .bg-\[\#d4d4d4\] { background-color: hsl(0 0% 30%); }
+  /* neutral light grays -> cool graphite */
+  .bg-\[\#f7f7f7\] { background-color: hsl(240 5% 18%); }
+  .bg-\[\#f4f4f5\] { background-color: hsl(240 5% 16%); }
+  .bg-\[\#eeeeee\] { background-color: hsl(240 5% 20%); }
+  .bg-\[\#f0f0f0\] { background-color: hsl(240 5% 21%); }
+  .bg-\[\#f2f2f2\] { background-color: hsl(240 5% 19%); }
+  .bg-\[\#e5e5e5\] { background-color: hsl(240 5% 22%); }
+  .bg-\[\#d4d4d4\] { background-color: hsl(240 5% 26%); }
 
-  /* warm creams -> neutral dark surfaces (no brown) */
-  .bg-\[\#ebe3d5\] { background-color: hsl(0 0% 18%); }
-  .bg-\[\#f6efe6\] { background-color: hsl(0 0% 20%); }
-  .bg-\[\#eee3d5\] { background-color: hsl(0 0% 20%); }
-  .bg-\[\#f7f3eb\] { background-color: hsl(0 0% 19%); }
-  .bg-\[\#f7f2eb\] { background-color: hsl(0 0% 19%); }
-  .bg-\[\#fcf8f2\] { background-color: hsl(0 0% 20%); }
-  .bg-\[\#f8f2e9\] { background-color: hsl(0 0% 20%); }
-  .bg-\[\#f4ede4\] { background-color: hsl(0 0% 20%); }
-  .bg-\[\#f4efe6\] { background-color: hsl(0 0% 20%); }
-  .bg-\[\#efe8de\] { background-color: hsl(0 0% 19%); }
-  .bg-\[\#ece3d6\] { background-color: hsl(0 0% 20%); }
-  .bg-\[\#ebe6d8\] { background-color: hsl(0 0% 19%); }
-  .bg-\[\#f3ede3\] { background-color: hsl(0 0% 20%); }
-  .bg-\[\#ddd2c2\] { background-color: hsl(0 0% 22%); }
+  /* warm creams -> cool graphite (no brown) */
+  .bg-\[\#ebe3d5\] { background-color: hsl(240 5% 14%); }
+  .bg-\[\#f6efe6\] { background-color: hsl(240 5% 16%); }
+  .bg-\[\#eee3d5\] { background-color: hsl(240 5% 16%); }
+  .bg-\[\#f7f3eb\] { background-color: hsl(240 5% 15%); }
+  .bg-\[\#f7f2eb\] { background-color: hsl(240 5% 15%); }
+  .bg-\[\#fcf8f2\] { background-color: hsl(240 5% 16%); }
+  .bg-\[\#f8f2e9\] { background-color: hsl(240 5% 16%); }
+  .bg-\[\#f4ede4\] { background-color: hsl(240 5% 16%); }
+  .bg-\[\#f4efe6\] { background-color: hsl(240 5% 16%); }
+  .bg-\[\#efe8de\] { background-color: hsl(240 5% 15%); }
+  .bg-\[\#ece3d6\] { background-color: hsl(240 5% 16%); }
+  .bg-\[\#ebe6d8\] { background-color: hsl(240 5% 15%); }
+  .bg-\[\#f3ede3\] { background-color: hsl(240 5% 16%); }
+  .bg-\[\#ddd2c2\] { background-color: hsl(240 5% 18%); }
 
-  /* green tint -> dark green */
-  .bg-\[\#f6fbf4\] { background-color: hsl(120 20% 16%); }
-  .bg-\[\#f7fbf7\] { background-color: hsl(120 20% 16%); }
+  /* green tint -> premium emerald dark */
+  .bg-\[\#f6fbf4\] { background-color: hsl(152 22% 14%); }
+  .bg-\[\#f7fbf7\] { background-color: hsl(152 22% 14%); }
 
-  /* error tint -> deep neutral red (not brown) */
-  .bg-\[\#fff7f5\] { background-color: hsl(358 30% 14%); }
-  .bg-\[\#fff6f4\] { background-color: hsl(358 30% 13%); }
-  .bg-\[\#fff1ee\] { background-color: hsl(358 30% 14%); }
-  .bg-\[\#fff1ec\] { background-color: hsl(358 30% 14%); }
-  .bg-\[\#fff8f6\] { background-color: hsl(358 30% 14%); }
-  .bg-\[\#faece8\] { background-color: hsl(358 26% 16%); }
-  .bg-\[\#fde5df\] { background-color: hsl(358 30% 16%); }
+  /* error tint -> premium rose dark */
+  .bg-\[\#fff7f5\] { background-color: hsl(352 35% 14%); }
+  .bg-\[\#fff6f4\] { background-color: hsl(352 35% 13%); }
+  .bg-\[\#fff1ee\] { background-color: hsl(352 35% 14%); }
+  .bg-\[\#fff1ec\] { background-color: hsl(352 35% 14%); }
+  .bg-\[\#fff8f6\] { background-color: hsl(352 35% 14%); }
+  .bg-\[\#faece8\] { background-color: hsl(352 30% 16%); }
+  .bg-\[\#fde5df\] { background-color: hsl(352 35% 16%); }
 
-  /* amber tint -> neutral dark (no brown) */
-  .bg-\[\#fff9f6\] { background-color: hsl(0 0% 19%); }
-  .bg-\[\#fff6ef\] { background-color: hsl(0 0% 19%); }
-  .bg-\[\#fbf6e8\] { background-color: hsl(0 0% 18%); }
+  /* amber tint -> premium cool (no brown) */
+  .bg-\[\#fff9f6\] { background-color: hsl(240 5% 15%); }
+  .bg-\[\#fff6ef\] { background-color: hsl(240 5% 15%); }
+  .bg-\[\#fbf6e8\] { background-color: hsl(240 5% 14%); }
 
-  /* light text grays -> readable neutral on dark */
-  .text-\[\#525252\] { color: hsl(0 0% 78%); }
-  .text-\[\#666666\] { color: hsl(0 0% 74%); }
-  .text-\[\#8a8276\] { color: hsl(0 0% 66%); }
-  .text-\[\#9a9184\] { color: hsl(0 0% 68%); }
-  .text-\[\#6d655c\] { color: hsl(0 0% 68%); }
-  .text-\[\#f6efe6\] { color: hsl(0 0% 82%); }
-  .text-\[\#e8dccd\] { color: hsl(0 0% 80%); }
-  .text-\[\#cbb8a5\] { color: hsl(0 0% 74%); }
+  /* light text grays -> cool readable on dark */
+  .text-\[\#525252\] { color: hsl(240 6% 78%); }
+  .text-\[\#666666\] { color: hsl(240 5% 74%); }
+  .text-\[\#8a8276\] { color: hsl(240 4% 68%); }
+  .text-\[\#9a9184\] { color: hsl(240 4% 70%); }
+  .text-\[\#6d655c\] { color: hsl(240 4% 70%); }
+  .text-\[\#f6efe6\] { color: hsl(240 8% 84%); }
+  .text-\[\#e8dccd\] { color: hsl(240 6% 82%); }
+  .text-\[\#cbb8a5\] { color: hsl(240 5% 76%); }
 
-  /* warm accent text -> brighter on dark */
-  .text-\[\#9f5c53\] { color: hsl(6 45% 72%); }
-  .text-\[\#a76924\] { color: hsl(28 60% 64%); }
-  .text-\[\#bf6e21\] { color: hsl(28 62% 66%); }
-  .text-\[\#94652a\] { color: hsl(30 50% 62%); }
-  .text-\[\#8a5a24\] { color: hsl(30 55% 62%); }
-  .text-\[\#8b7355\] { color: hsl(30 18% 70%); }
-  .text-\[\#9f9587\] { color: hsl(36 10% 68%); }
+  /* accent text -> premium brighter */
+  .text-\[\#9f5c53\] { color: hsl(352 42% 70%); }
+  .text-\[\#a76924\] { color: hsl(38 72% 64%); }
+  .text-\[\#bf6e21\] { color: hsl(38 74% 66%); }
+  .text-\[\#94652a\] { color: hsl(38 52% 64%); }
+  .text-\[\#8a5a24\] { color: hsl(38 55% 64%); }
+  .text-\[\#8b7355\] { color: hsl(240 6% 72%); }
+  .text-\[\#9f9587\] { color: hsl(240 5% 70%); }
 
-  /* dialog action buttons: make the light warm ones readable on dark,
-     and keep the shell action button as a bright primary. */
-  .text-\[\#1e1b16\] { color: hsl(0 0% 92%); }
-  .bg-\[\#1e1b16\] { background-color: hsl(0 0% 82%); color: hsl(0 0% 10%); }
-  .bg-\[\#29241d\] { background-color: hsl(0 0% 72%); }
+  /* dialog action buttons */
+  .text-\[\#1e1b16\] { color: hsl(240 10% 92%); }
+  .bg-\[\#1e1b16\] { background-color: hsl(240 8% 86%); color: hsl(0 0% 7%); }
+  .bg-\[\#29241d\] { background-color: hsl(240 5% 72%); }
 
-  /* borders -> dark */
-  .border-\[\#d4d4d4\] { border-color: hsl(0 0% 28%); }
-  .border-\[\#ddd1bf\] { border-color: hsl(0 0% 24%); }
+  /* borders -> cool graphite */
+  .border-\[\#d4d4d4\] { border-color: hsl(240 5% 24%); }
+  .border-\[\#ddd1bf\] { border-color: hsl(240 5% 20%); }
 }
 
 /* Light-mode remap — the inverse of the dark remap above.
@@ -289,15 +288,15 @@ the many feature files that use arbitrary-value colors. */
    reads correctly on light backgrounds. Scoped under [data-theme="light"]
    so specificity beats the default dark-mode (and global) overrides. */
 @layer utilities {
-  :root[data-theme="light"] .bg-\[\#1a1a1a\] { background-color: #ebe9e3; }
-  :root[data-theme="light"] .bg-\[\#171717\] { background-color: #efede7; }
-  :root[data-theme="light"] .bg-\[\#121212\] { background-color: #f8f7f3; }
-  :root[data-theme="light"] .bg-\[\#1e1e1e\] { background-color: #fbfaf7; }
-  :root[data-theme="light"] .bg-\[\#232323\] { background-color: #f1efe9; }
-  :root[data-theme="light"] .bg-\[\#2a2a2a\] { background-color: #f5f3ed; }
-  :root[data-theme="light"] .bg-\[\#303030\] { background-color: #ebe9e3; }
-  :root[data-theme="light"] .bg-\[\#262626\] { background-color: #f5f3ed; }
-  :root[data-theme="light"] .bg-\[\#2a241e\] { background-color: #eee5d5; }
+  :root[data-theme="light"] .bg-\[\#1a1a1a\] { background-color: #ffffff; }
+  :root[data-theme="light"] .bg-\[\#171717\] { background-color: #ffffff; }
+  :root[data-theme="light"] .bg-\[\#121212\] { background-color: #ffffff; }
+  :root[data-theme="light"] .bg-\[\#1e1e1e\] { background-color: #ffffff; }
+  :root[data-theme="light"] .bg-\[\#232323\] { background-color: #f5f5f5; }
+  :root[data-theme="light"] .bg-\[\#2a2a2a\] { background-color: #f0f0f0; }
+  :root[data-theme="light"] .bg-\[\#303030\] { background-color: #f0f0f0; }
+  :root[data-theme="light"] .bg-\[\#262626\] { background-color: #f5f5f5; }
+  :root[data-theme="light"] .bg-\[\#2a241e\] { background-color: #f5f5f5; }
   /* surfaces that must stay dark (red close hover restores below) */
   :root[data-theme="light"] .bg-\[\#3a3a3a\] { background-color: #3a3a3a; }
   :root[data-theme="light"] .bg-\[\#c42b1c\] { background-color: #c42b1c; }
@@ -379,20 +378,20 @@ the many feature files that use arbitrary-value colors. */
   :root[data-theme="light"] .hover\:text-white:hover { color: #1a1a1a; }
   :root[data-theme="light"] .focus\:text-white:focus { color: #1a1a1a; }
 
-  /* white borders -> soft light neutral */
-  :root[data-theme="light"] .border-white\/20 { border-color: #cfccc6; }
-  :root[data-theme="light"] .border-white\/10 { border-color: #e0ded8; }
-  :root[data-theme="light"] .border-white\/\[0\.08\] { border-color: #e5e3dd; }
-  :root[data-theme="light"] .border-white\/\[0\.07\] { border-color: #e5e3dd; }
-  :root[data-theme="light"] .border-white\/\[0\.06\] { border-color: #e9e7e1; }
-  :root[data-theme="light"] .border-white\/\[0\.05\] { border-color: #ebe9e3; }
+  /* white borders -> neutral */
+  :root[data-theme="light"] .border-white\/20 { border-color: #e5e5e5; }
+  :root[data-theme="light"] .border-white\/10 { border-color: #ededed; }
+  :root[data-theme="light"] .border-white\/\[0\.08\] { border-color: #f0f0f0; }
+  :root[data-theme="light"] .border-white\/\[0\.07\] { border-color: #f0f0f0; }
+  :root[data-theme="light"] .border-white\/\[0\.06\] { border-color: #f5f5f5; }
+  :root[data-theme="light"] .border-white\/\[0\.05\] { border-color: #fafafa; }
 
-  /* white overlays -> dark subtle overlays (hover/active states) */
-  :root[data-theme="light"] .bg-white\/10 { background-color: rgba(28, 25, 20, 0.1); }
-  :root[data-theme="light"] .bg-white\/\[0\.08\] { background-color: rgba(28, 25, 20, 0.08); }
-  :root[data-theme="light"] .bg-white\/\[0\.06\] { background-color: rgba(28, 25, 20, 0.06); }
-  :root[data-theme="light"] .bg-white\/\[0\.04\] { background-color: rgba(28, 25, 20, 0.04); }
-  :root[data-theme="light"] .bg-white\/\[0\.03\] { background-color: rgba(28, 25, 20, 0.03); }
+  /* white overlays -> neutral */
+  :root[data-theme="light"] .bg-white\/10 { background-color: rgba(0, 0, 0, 0.06); }
+  :root[data-theme="light"] .bg-white\/\[0\.08\] { background-color: rgba(0, 0, 0, 0.045); }
+  :root[data-theme="light"] .bg-white\/\[0\.06\] { background-color: rgba(0, 0, 0, 0.03); }
+  :root[data-theme="light"] .bg-white\/\[0\.04\] { background-color: rgba(0, 0, 0, 0.02); }
+  :root[data-theme="light"] .bg-white\/\[0\.03\] { background-color: rgba(0, 0, 0, 0.015); }
 
   /* keep white text on surfaces that intentionally stay dark */
   :root[data-theme="light"] .bg-\[\#1e1b16\] { color: #ffffff; }

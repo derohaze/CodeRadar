@@ -2,6 +2,7 @@ import { File01Icon, Folder01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Play, Search } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TextMorph } from "@/components/core/text-morph";
 import { basename } from "@/features/dashboard/model/home-screen.utils";
 import { useHomeScreen } from "@/features/dashboard/model/useHomeScreen";
 import type { StartScanPayload } from "@/shared/api/security";
@@ -96,18 +97,26 @@ export function HomeScreen({ onStartScan, defaultPreset, defaultScanMode }: Home
             <div>
               <p className="text-[11px] font-medium tracking-wide text-white/50">Review mode</p>
               <Select value={scanMode} onValueChange={(v) => setScanMode(v as "fast" | "deep")}>
-                <SelectTrigger className="mt-1.5 h-8 rounded-lg border border-white/10 bg-[#232323] text-[12.5px] text-white focus:ring-0">
+                <SelectTrigger className="mt-1.5 h-8 rounded-full border border-white/10 bg-[#232323] text-[12.5px] text-white transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] focus:ring-0">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="rounded-lg border border-white/10 bg-[#232323] text-white">
-                  <SelectItem value="deep" className="rounded-md text-[12.5px] focus:bg-white/[0.06]">Deep review</SelectItem>
-                  <SelectItem value="fast" className="rounded-md text-[12.5px] focus:bg-white/[0.06]">Fast review</SelectItem>
+                <SelectContent className="rounded-xl border border-white/10 bg-[#232323] text-white shadow-[0_16px_32px_rgba(0,0,0,0.5)]">
+                  <SelectItem value="deep" className="rounded-full text-[12.5px] focus:bg-white/[0.06] data-[state=checked]:bg-white data-[state=checked]:text-black">Deep review</SelectItem>
+                  <SelectItem value="fast" className="rounded-full text-[12.5px] focus:bg-white/[0.06] data-[state=checked]:bg-white data-[state=checked]:text-black">Fast review</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
               <p className="text-[11px] font-medium tracking-wide text-white/50">Target</p>
-              <div className="mt-1.5 inline-flex rounded-lg border border-white/10 bg-[#232323] p-0.5">
+              {/* Premium pill toggle: sliding indicator + 500ms cubic-bezier */}
+              <div className="relative mt-1.5 inline-flex rounded-full border border-white/10 bg-[#232323] p-0.5">
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-white shadow-sm transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-transform"
+                  style={{
+                    transform: targetType === "folder" ? "translateX(0)" : "translateX(calc(100% + 4px))",
+                  }}
+                />
                 {[
                   { id: "folder", label: "Folder", icon: Folder01Icon },
                   { id: "file", label: "File", icon: File01Icon },
@@ -120,10 +129,18 @@ export function HomeScreen({ onStartScan, defaultPreset, defaultScanMode }: Home
                         setTargetType(opt.id as "folder" | "file");
                         setTargetPath("");
                       }}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-[12px] font-medium transition-colors ${active ? "bg-white text-black" : "text-white/60 hover:text-white"}`}
+                      className={`relative z-10 inline-flex min-w-[84px] items-center justify-center gap-1.5 rounded-full px-4 py-1.5 text-[12px] font-medium transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+                        active ? "text-black" : "text-white/60 hover:text-white"
+                      }`}
                     >
-                      <HugeiconsIcon icon={opt.icon} size={12} strokeWidth={1.7} color="currentColor" />
-                      {opt.label}
+                      <HugeiconsIcon
+                        icon={opt.icon}
+                        size={12}
+                        strokeWidth={1.7}
+                        color="currentColor"
+                        className={`transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${active ? "translate-y-0 opacity-100" : "translate-y-0 opacity-70"}`}
+                      />
+                      <span className="transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]">{opt.label}</span>
                     </button>
                   );
                 })}
@@ -131,18 +148,24 @@ export function HomeScreen({ onStartScan, defaultPreset, defaultScanMode }: Home
             </div>
           </div>
 
-          {/* Row 3: Source picker — compact */}
+          {/* Row 3: Source picker — TextMorph button (fixed width, text morph) */}
           <div className="mt-4">
             <div className="flex items-center gap-2">
               <button
                 onClick={pickPath}
                 disabled={pickingPath || !canBrowse}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-[12.5px] font-medium text-black hover:bg-white/90 disabled:opacity-50"
+                className="inline-flex h-8 w-[140px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-white px-4 text-[12.5px] font-medium text-black shadow-sm transition-colors hover:bg-zinc-100 disabled:opacity-50"
               >
-                {pickingPath ? <Loader variant="spin" className="size-3.5" /> : <HugeiconsIcon icon={targetType === "folder" ? Folder01Icon : File01Icon} size={12} strokeWidth={1.7} />}
-                {pickingPath ? "Opening…" : targetType === "folder" ? "Choose folder" : "Choose file"}
+                {pickingPath ? (
+                  <Loader variant="spin" className="size-3.5 shrink-0" />
+                ) : (
+                  <HugeiconsIcon icon={targetType === "folder" ? Folder01Icon : File01Icon} size={12} strokeWidth={1.7} className="shrink-0" />
+                )}
+                <TextMorph className="text-[12.5px] font-medium">
+                  {pickingPath ? "Opening…" : targetType === "folder" ? "Choose folder" : "Choose file"}
+                </TextMorph>
               </button>
-              <span className="truncate text-[12px] text-white/50" title={selectedTargetName}>
+              <span className="truncate text-[12px] text-white/50 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]" title={selectedTargetName}>
                 {selectedTargetName}
               </span>
             </div>

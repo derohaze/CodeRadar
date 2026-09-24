@@ -188,8 +188,4 @@ CodeGuard is designed with security as a primary concern:
 
 ## Support
 
-<<<<<<< HEAD
 For issues, questions, or contributions, please refer to the project documentation or contact the development team.
-=======
-For issues, questions, or contributions, please refer to the project documentation or contact the development team.
->>>>>>> 9f07d1264cee3319566880afff5dc17b6109fcc9

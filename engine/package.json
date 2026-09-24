@@ -1,0 +1,20 @@
+{
+  "name": "@codeguard/engine",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CodeGuard review engine: local-first code review pipeline (discovery, context, diff, findings)",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "review": "bun run src/cli.ts review",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.14",
+    "typescript": "^5.8.3"
+  }
+}

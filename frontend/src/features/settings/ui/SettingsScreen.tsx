@@ -75,15 +75,18 @@ export function SettingsScreen({ onBack, settings, onPatchSettings, isSaving, is
     <div className="flex min-h-0 flex-1 overflow-hidden bg-[#171717]">
       {/* Left nav — collapsible like workspace sidebar, Codex warm dark */}
       <div
-        className="relative shrink-0 overflow-hidden"
+        className="relative shrink-0 overflow-hidden transition-[width] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
         style={{ width: isSidebarCollapsed ? 0 : 240 }}
         aria-hidden={isSidebarCollapsed}
       >
         <div
-          className="absolute inset-y-0 left-0 flex w-[240px] min-h-0 flex-col overflow-hidden bg-[#171717]"
-          style={{ transform: isSidebarCollapsed ? "translateX(-240px)" : "translateX(0)", opacity: isSidebarCollapsed ? 0 : 1 }}
+          className="absolute inset-y-0 left-0 flex w-[240px] min-h-0 flex-col overflow-hidden bg-[#171717] transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-transform"
+          style={{ transform: isSidebarCollapsed ? "translateX(-16px)" : "translateX(0)", opacity: isSidebarCollapsed ? 0 : 1 }}
         >
-          <div className="flex h-[44px] items-center border-b border-white/[0.06] px-3">
+          <div
+            className={`flex h-[44px] items-center px-3 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${isSidebarCollapsed ? "translate-y-4 opacity-0" : "translate-y-0 opacity-100"}`}
+            style={{ transitionDelay: isSidebarCollapsed ? "0ms" : "0ms" }}
+          >
             <button
               onClick={onBack}
               className="app-no-drag inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] font-normal text-white/60 transition-colors hover:bg-white/[0.06] hover:text-white/85"
@@ -94,15 +97,16 @@ export function SettingsScreen({ onBack, settings, onPatchSettings, isSaving, is
           </div>
 
           <div className="space-y-0.5 px-2 py-3">
-            {sections.map((section) => {
+            {sections.map((section, index) => {
               const active = activeTab === section.id;
               return (
                 <button
                   key={section.id}
                   onClick={() => setActiveTab(section.id)}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] font-medium transition-colors ${
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] font-medium transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
                     active ? "bg-white/[0.08] text-white" : "text-white/60 hover:bg-white/[0.04] hover:text-white/85"
-                  }`}
+                  } ${isSidebarCollapsed ? "translate-y-4 opacity-0" : "translate-y-0 opacity-100"}`}
+                  style={{ transitionDelay: isSidebarCollapsed ? "0ms" : `${75 + index * 75}ms` }}
                 >
                   <HugeiconsIcon icon={section.icon} size={14} strokeWidth={1.7} color="currentColor" className={active ? "text-white/70" : "text-white/40"} />
                   <span>{section.label}</span>
@@ -113,9 +117,9 @@ export function SettingsScreen({ onBack, settings, onPatchSettings, isSaving, is
         </div>
       </div>
 
-      {/* Right content — Codex #121212 / card #1e1e1e with page curve like external app */}
+      {/* Right content — pure white curve */}
       <div
-        className={`flex min-h-0 flex-1 flex-col overflow-hidden bg-[#171717] ${
+        className={`flex min-h-0 flex-1 flex-col overflow-hidden border-b border-l border-r border-border-soft bg-[#171717] shadow-sm transition-[border-radius] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
           isSidebarCollapsed ? "rounded-t-[16px]" : "rounded-tl-[16px]"
         }`}
       >
@@ -133,13 +137,12 @@ export function SettingsScreen({ onBack, settings, onPatchSettings, isSaving, is
   );
 }
 
-function GeneralTab({ settings, onPatchSettings, isSaving }: { settings: RuntimeSettings; onPatchSettings: SettingsScreenProps["onPatchSettings"]; isSaving: boolean }) {
+function GeneralTab({ settings, onPatchSettings }: { settings: RuntimeSettings; onPatchSettings: SettingsScreenProps["onPatchSettings"]; isSaving: boolean }) {
   return (
     <>
       <div className="flex items-center justify-between gap-6">
         <div>
           <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-white">General</h2>
-          <p className="mt-1 h-4 text-[11px] text-white/40" aria-live="polite">{isSaving ? "Saving settings…" : "\u00a0"}</p>
         </div>
       </div>
 
