@@ -90,7 +90,7 @@ describe("ScanProgressScreen", () => {
 
     render(<ScanProgressScreen session={session} />);
 
-    expect(screen.getByRole("heading", { name: "Reviewing your codebase for security issues" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Reviewing your codebase for issues" })).toBeInTheDocument();
     expect(screen.getByText("Inspecting repository structure, data flow, and active review signals")).toBeInTheDocument();
     expect(screen.getByText("Coverage pending")).toBeInTheDocument();
     expect(screen.getByText("Repository structure, dependency markers, and review metadata are being prepared")).toBeInTheDocument();

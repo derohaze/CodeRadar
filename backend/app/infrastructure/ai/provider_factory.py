@@ -3,33 +3,35 @@ from __future__ import annotations
 from app.core.config import get_settings
 from app.core.exceptions import ExternalAIServiceError
 from app.domain.services.ai_client import SecurityAnalysisAIClient
-from app.infrastructure.ai.nvidia_security_client import NvidiaSecurityClient, RUNTIME_TASK_MODELS
+from app.infrastructure.ai.scan_client import RUNTIME_TASK_MODELS, ScanAIClient
+# Keep old import working for compat
+from app.infrastructure.ai.nvidia_security_client import NvidiaSecurityClient  # noqa: F401
 from app.infrastructure.ai.providers.registry import get_provider
 from app.infrastructure.services.runtime_safety_policy import ensure_allowed_outbound_url
 
-# Providers whose wire format is OpenAI-compatible (/chat/completions) and can drive
-# the scan engine. Anthropic and Gemini use different APIs and are not wired in, so
-# saving them as the active provider must fail fast with an honest message.
+# All OpenAI-compatible providers can drive the scan engine via ScanAIClient.
+# Anthropic/Gemini use different wire formats — they are for future typed adapters.
 _SUPPORTED_SCAN_PROVIDERS = {"nvidia", "security", "openai", "deepseek", "grok", "custom"}
 
 
 def build_ai_client() -> SecurityAnalysisAIClient:
     settings = get_settings()
     provider_order = [item.strip().lower() for item in settings.ai_provider_order if item.strip()]
-    unsupported = [provider for provider in provider_order if provider not in {"nvidia", "security"}]
-    if unsupported:
-        raise RuntimeError("Only the security AI client entrypoint is supported by this backend.")
-
     for provider in provider_order or ["security"]:
         client = _build_provider(provider, settings)
         if client is not None:
             return client
-    raise RuntimeError("No supported AI transport is configured. Set NVIDIA_API_KEY or NVIDIA_API_KEYS.")
+    raise RuntimeError("No supported AI transport is configured. Set NVIDIA_API_KEY or API key in Settings → Providers.")
 
 
 def _build_provider(provider: str, settings) -> SecurityAnalysisAIClient | None:
-    if provider in {"nvidia", "security"} and NvidiaSecurityClient.is_configured(settings):
-        return NvidiaSecurityClient()
+    # Generic OpenAI-compatible path — ScanAIClient works for any provider, not just Nvidia
+    if provider in _SUPPORTED_SCAN_PROVIDERS and ScanAIClient.is_configured(settings):
+        # provider_name is derived from env or explicit provider; ScanAIClient will resolve model/base_url from settings
+        return ScanAIClient(provider_name=provider)
+    # Fallback: nvidia env check
+    if provider in {"nvidia", "security"} and ScanAIClient.is_configured(settings):
+        return ScanAIClient(provider_name=provider)
     return None
 
 
@@ -76,7 +78,8 @@ def build_ai_client_from_runtime_config(config: dict) -> SecurityAnalysisAIClien
         ) from exc
     api_key = str(config["api_key"]).strip()
     model = str(config["model"]).strip()
-    return NvidiaSecurityClient(
+    return ScanAIClient(
+        provider_name=provider,
         api_keys=(api_key,),
         base_url=base_url,
         task_models={task_name: model for task_name in RUNTIME_TASK_MODELS},

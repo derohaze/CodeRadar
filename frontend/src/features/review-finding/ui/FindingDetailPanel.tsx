@@ -1,36 +1,27 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronDown, CircleAlert, FlaskConical, Gauge, ShieldCheck, ShieldX, Zap } from "lucide-react";
-import { ShowMore } from "@/components/ui/show-more";
+import { CircleAlert, Gauge, ShieldCheck, ShieldX, Zap } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { Finding, RemediationExplanation } from "@/entities/finding/model/types";
+import type { Finding } from "@/entities/finding/model/types";
 import { buildFindingDecisionSummary } from "@/entities/finding/lib/decision-center";
 import { getRemediationStatusLabel, getRemediationStatusTone } from "@/entities/finding/lib/remediation-status";
-import { explainFinding } from "@/shared/api/security";
-import { CodeBlock } from "@/shared/ui/CodeBlock";
-import { Loader } from "@/shared/ui/Loader";
-import { toast } from "@/components/ui/sonner";
-import { DataFlowGraph } from "./DataFlowGraph";
+import { toAnalystCopy } from "@/shared/lib/analyst-copy";
+import { CopyButton } from "@/shared/ui/CopyButton";
 
 interface Props {
   finding: Finding;
-  sessionId?: string | null;
   onDismiss: () => void;
-  onOpenDecisionCenter: () => void;
   onSuggestFix: () => void;
 }
 
-export function FindingDetailPanel({ finding, sessionId, onDismiss, onOpenDecisionCenter, onSuggestFix }: Props) {
+export function FindingDetailPanel({ finding, onDismiss, onSuggestFix }: Props) {
   const [loading, setLoading] = useState(false);
-  const [showAttackerStory, setShowAttackerStory] = useState(false);
-  const [showFullAttackerStory, setShowFullAttackerStory] = useState(false);
-  const [showAttackSimulation, setShowAttackSimulation] = useState(false);
-  const [explanation, setExplanation] = useState<RemediationExplanation | null>(null);
-  const [isExplanationLoading, setIsExplanationLoading] = useState(false);
 
-  const attackerStory = useMemo(() => explanation?.attackSteps ?? [], [explanation?.attackSteps]);
   const remediationStatusTone = getRemediationStatusTone(finding.remediationStatus);
   const decisionSummary = useMemo(() => buildFindingDecisionSummary(finding), [finding]);
+
+  const recommendedFix = finding.fixSuggestions.find((entry) => entry.profile === "recommended") ?? finding.fixSuggestions[0];
+  const fixPrompt = buildFixPrompt(finding);
 
   const handleSuggestFix = () => {
     setLoading(true);
@@ -39,39 +30,9 @@ export function FindingDetailPanel({ finding, sessionId, onDismiss, onOpenDecisi
     }, 500);
   };
 
-  const handleToggleAttackerStory = async () => {
-    if (showAttackerStory) {
-      setShowAttackerStory(false);
-      setShowFullAttackerStory(false);
-      return;
-    }
-
-    setShowAttackerStory(true);
-    if (explanation || !sessionId || isExplanationLoading) {
-      return;
-    }
-
-    setIsExplanationLoading(true);
-    try {
-      const detail = await explainFinding({
-        sessionId,
-        findingId: finding.id,
-      });
-      setExplanation(detail);
-    } catch (error) {
-      console.error("[CodeGuard] Failed to explain finding", error);
-      toast.error(error instanceof Error ? error.message : "Unable to explain this finding");
-    } finally {
-      setIsExplanationLoading(false);
-    }
-  };
-
   return (
     <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 16 }}
-      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+      initial={{ opacity: 1, y: 0 }}
       className="hide-scrollbar flex-1 overflow-y-auto bg-surface"
     >
       <div className="mx-auto max-w-3xl px-8 py-8">
@@ -81,7 +42,7 @@ export function FindingDetailPanel({ finding, sessionId, onDismiss, onOpenDecisi
             <p className="mt-2 text-sm font-mono text-txt-tertiary">
               {finding.file}:{finding.line}{finding.lineEnd > finding.line ? `-${finding.lineEnd}` : ""}
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2">
               <span
                 className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.14em] ${
                   remediationStatusTone === "success"
@@ -97,131 +58,57 @@ export function FindingDetailPanel({ finding, sessionId, onDismiss, onOpenDecisi
               >
                 {getRemediationStatusLabel(finding.remediationStatus)}
               </span>
+              <span className="inline-flex rounded-full bg-[#f0f0f0] px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-txt-secondary">
+                {finding.severity} risk
+              </span>
             </div>
           </div>
-          <button
-            onClick={() => void handleToggleAttackerStory()}
-            className="rounded-xl border bg-card px-4 py-2 text-sm font-medium text-txt-primary"
-            style={{ borderColor: "hsl(var(--border-primary))" }}
-          >
-            {isExplanationLoading ? (
-              <span className="inline-flex items-center gap-2">
-                <Loader variant="spin" className="size-4 text-txt-primary" />
-                Generating...
-              </span>
-            ) : (
-              "Explain like attacker"
-            )}
-          </button>
+          <div className="shrink-0">
+            <button
+              onClick={() => void handleSuggestFix()}
+              disabled={loading}
+              className="rounded-lg border bg-card px-4 py-2 text-sm font-medium text-txt-primary transition-colors hover:bg-muted disabled:opacity-50"
+              style={{ borderColor: "hsl(var(--border-primary))" }}
+            >
+              {loading ? "Preparing fix..." : "Create fix"}
+            </button>
+          </div>
         </div>
 
-        <div className="mb-6 grid gap-3 md:grid-cols-[1.2fr_0.8fr]">
-          <motion.div
-            className="rounded-[20px] border bg-card px-4 py-4 transition-colors duration-200 hover:bg-[#fcf8f2]"
-            style={{ borderColor: "hsl(var(--border-soft))" }}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Gauge size={16} className="text-txt-secondary" />
-                <p className="text-sm font-medium text-txt-primary">AI confidence</p>
-              </div>
-              <span className="text-sm font-semibold text-txt-primary">{finding.confidence}%</span>
+        <div className="mb-6 rounded-[20px] border bg-card px-5 py-4" style={{ borderColor: "hsl(var(--border-soft))" }}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Gauge size={16} className="text-txt-secondary" />
+              <p className="text-sm font-medium text-txt-primary">AI confidence</p>
             </div>
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e5e5e5]">
-              <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${finding.confidence}%` }} />
-            </div>
-          </motion.div>
-
-          <motion.button
-            whileTap={{ scale: 0.985 }}
-            onClick={() => setShowAttackSimulation((current) => !current)}
-            className="rounded-[20px] border bg-card px-4 py-4 text-left transition-colors hover:bg-[#f7f7f7]"
-            style={{ borderColor: "hsl(var(--border-soft))" }}
-          >
-            <div className="flex items-center gap-2 text-txt-primary">
-              <FlaskConical size={16} className="text-status-progress" />
-              <p className="text-sm font-medium">Simulate attack</p>
-            </div>
-            <p className="mt-2 text-sm leading-6 text-txt-secondary">
-              Replay the input, execution path, and expected impact from the real review result
-            </p>
-          </motion.button>
+            <span className="text-sm font-semibold text-txt-primary">{finding.confidence}%</span>
+          </div>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e5e5e5]">
+            <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${finding.confidence}%` }} />
+          </div>
+          <p className="mt-3 text-xs leading-5 text-txt-tertiary">
+            {finding.confidence >= 90
+              ? "High confidence — the trigger and the wrong result are both grounded in the supplied code"
+              : finding.confidence >= 70
+                ? "Moderate confidence — the mechanism is quoted but the runtime state could not be fully verified"
+                : "Reviewer confidence — verify against the actual runtime state before applying the fix"}
+          </p>
         </div>
 
-        {showAttackerStory && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-6 rounded-[22px] border bg-[#fff9f6] px-5 py-4"
-            style={{ borderColor: "rgba(214, 131, 114, 0.22)" }}
-          >
-            <p className="mb-3 text-sm font-semibold text-txt-primary">Attacker story</p>
-            {isExplanationLoading && (
-              <LoadingNarrative />
-            )}
-            {!isExplanationLoading && attackerStory.length > 0 && (
-              <div className="space-y-2.5">
-                {(showFullAttackerStory ? attackerStory : attackerStory.slice(0, 2)).map((step, index) => (
-                  <div key={step} className="min-w-0 flex gap-3 text-sm text-txt-secondary">
-                    <span className="shrink-0 font-medium text-status-critical">{index + 1}.</span>
-                    <span className="min-w-0 break-words [overflow-wrap:anywhere]">{step}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {!isExplanationLoading && attackerStory.length === 0 && (
-              <p className="text-sm text-txt-secondary">No attacker narrative is available for this finding</p>
-            )}
-            {!isExplanationLoading && attackerStory.length > 2 && (
-              <ShowMore className="mt-4" onClick={() => setShowFullAttackerStory((current) => !current)}>
-                {({ isSelected }) => (
-                  <>
-                    Show {isSelected ? "less" : "more"}
-                    <ChevronDown
-                      className={isSelected ? "rotate-180 transition-transform duration-200" : "transition-transform duration-200"}
-                      size={16}
-                    />
-                  </>
-                )}
-              </ShowMore>
-            )}
-          </motion.div>
-        )}
-
-        {showAttackSimulation && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 grid gap-3 md:grid-cols-3">
-            <SimulationCard
-              label="Input"
-              value={isExplanationLoading ? "Generating attacker input simulation..." : explanation?.requestExample || "No generated attacker input available yet"}
-              tone="neutral"
-            />
-            <SimulationCard
-              label="Execution"
-              value={isExplanationLoading ? "Tracing the exploit execution path..." : explanation?.executionPath || "No generated execution path available yet"}
-              tone="warning"
-            />
-            <SimulationCard
-              label="Result"
-              value={isExplanationLoading ? "Estimating exploit impact..." : explanation?.exploitScenario || "No generated exploit impact is available yet"}
-              tone="danger"
-            />
-          </motion.div>
-        )}
 
         <Tabs defaultValue="summary">
           <TabsList className="mb-6 h-auto rounded-2xl bg-[#f4ede4] p-1">
             <TabsTrigger value="summary" className="rounded-xl px-4 py-2 text-sm">Summary</TabsTrigger>
             <TabsTrigger value="decision" className="rounded-xl px-4 py-2 text-sm">Decision</TabsTrigger>
-            <TabsTrigger value="flow" className="rounded-xl px-4 py-2 text-sm">Data flow</TabsTrigger>
-            <TabsTrigger value="explanation" className="rounded-xl px-4 py-2 text-sm">Explanation</TabsTrigger>
           </TabsList>
 
           <TabsContent value="summary" className="mt-0">
             <div className="space-y-4">
               <Panel>
-                <div className="grid gap-3 md:grid-cols-[1.15fr_0.85fr]">
+                <div className="grid gap-4 md:grid-cols-[1.15fr_0.85fr]">
                   <div>
-                    <p className="text-[13px] leading-6 text-txt-secondary">{finding.summary}</p>
+                    <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-txt-tertiary">What is wrong</p>
+                    <p className="mt-2 text-[13px] leading-6 text-txt-secondary">{finding.summary}</p>
                   </div>
                   <div className="grid gap-2">
                     <StoryMiniCard icon={CircleAlert} label="Why it matters" value={finding.impact} tone="danger" />
@@ -230,16 +117,16 @@ export function FindingDetailPanel({ finding, sessionId, onDismiss, onOpenDecisi
                 </div>
                 <div className="mt-3 grid gap-2.5 md:grid-cols-2">
                   <InfoCard label="Severity" value={finding.severity} />
-                  <InfoCard label="Impact" value={finding.impact} />
                   <InfoCard label="Category" value={finding.category} />
                   <InfoCard label="Location" value={`${finding.file}:${finding.line}${finding.lineEnd > finding.line ? `-${finding.lineEnd}` : ""}`} mono />
+                  <InfoCard label="Evidence" value={finding.evidence} mono />
                 </div>
               </Panel>
 
               <Panel>
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-txt-primary">Risk story</p>
-                  <span className="text-xs text-txt-tertiary">3-step summary</span>
+                  <p className="text-sm font-semibold text-txt-primary">Attack path</p>
+                  <span className="text-xs text-txt-tertiary">Entry point to impact</span>
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
                   <StoryStep step="1" title="Entry point" text={finding.attackSimulation.input} />
@@ -247,6 +134,20 @@ export function FindingDetailPanel({ finding, sessionId, onDismiss, onOpenDecisi
                   <StoryStep step="3" title="Impact" text={finding.attackSimulation.result} tone="danger" />
                 </div>
               </Panel>
+
+              {recommendedFix && (
+                <Panel>
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-txt-primary">Recommended fix</p>
+                      <p className="mt-1 text-xs text-txt-tertiary">Copy to Codex / Claude / Cursor</p>
+                    </div>
+                    <CopyButton value={fixPrompt} label="Copy fix prompt" />
+                  </div>
+                  <p className="text-[13px] leading-6 text-txt-secondary">{recommendedFix.description}</p>
+                  <pre className="mt-3 max-h-[220px] overflow-auto rounded-lg bg-[#0f0f0f] p-3 text-[11px] leading-5 text-white/80">{fixPrompt}</pre>
+                </Panel>
+              )}
             </div>
           </TabsContent>
 
@@ -279,94 +180,43 @@ export function FindingDetailPanel({ finding, sessionId, onDismiss, onOpenDecisi
               </Panel>
             </div>
           </TabsContent>
-
-          <TabsContent value="flow" className="mt-0">
-            <div className="space-y-4">
-              <DataFlowGraph steps={explanation?.attackSteps} />
-              <Panel>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <StoryMiniCard icon={CircleAlert} label="Input" value={explanation?.entryPoint || "Generate the attacker explanation to inspect the real input path"} />
-                  <StoryMiniCard icon={Zap} label="Propagation" value={explanation?.executionPath || "Generate the attacker explanation to inspect the propagation path"} tone="warning" />
-                  <StoryMiniCard icon={ShieldX} label="Impact" value={explanation?.impact || "Generate the attacker explanation to inspect the resulting impact"} tone="danger" />
-                </div>
-              </Panel>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="explanation" className="mt-0">
-            <div className="space-y-4">
-              <Panel>
-                <p className="text-sm leading-7 text-txt-secondary">
-                  {explanation?.exploitScenario || "Generate the attacker explanation to view the code-aware exploit narrative for this finding"}
-                </p>
-              </Panel>
-
-              <Panel>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-txt-primary">How CodeGuard explains it</p>
-                  <span className="text-xs text-txt-tertiary">Cause to effect</span>
-                </div>
-                <div className="space-y-3">
-                  <ExplainRow label="Cause" value={explanation?.summary || "Generate the attacker explanation to inspect the root cause"} />
-                  <ExplainRow label="Boundary" value={explanation?.executionPath || "Generate the attacker explanation to inspect the trust-boundary crossing"} />
-                  <ExplainRow label="Outcome" value={explanation?.impact || "Generate the attacker explanation to inspect the exploit outcome"} tone="danger" />
-                  {explanation?.payloadExample ? <ExplainRow label="Payload" value={explanation.payloadExample} /> : null}
-                </div>
-              </Panel>
-            </div>
-          </TabsContent>
-
         </Tabs>
 
         <div className="mt-8 flex items-center justify-end gap-3 border-t pt-4" style={{ borderColor: "hsl(var(--border-primary))" }}>
-          <motion.button
-            whileTap={{ scale: 0.985 }}
+          <button
             onClick={onDismiss}
             disabled={loading}
-            className="rounded-xl border bg-card px-5 py-2 text-sm font-medium text-txt-primary disabled:opacity-50"
+            className="rounded-lg border bg-card px-5 py-2 text-sm font-medium text-txt-primary transition-colors hover:bg-muted disabled:opacity-50"
             style={{ borderColor: "hsl(var(--border-primary))" }}
           >
             Dismiss
-          </motion.button>
+          </button>
         </div>
       </div>
     </motion.div>
   );
 }
 
-function LoadingNarrative() {
-  return (
-    <div className="mb-3 rounded-2xl border bg-card/60 px-4 py-4" style={{ borderColor: "hsl(var(--border-soft))" }}>
-      <div className="flex items-center gap-2 text-sm text-txt-secondary">
-        <Loader variant="spin" className="size-4 text-txt-primary" />
-        <span>Generating a code-aware attacker narrative from the traced path...</span>
-      </div>
-    </div>
-  );
-}
-
-function SimulationCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: "neutral" | "warning" | "danger";
-}) {
-  const toneClass =
-    tone === "danger"
-      ? "bg-[#fff7f5]"
-      : tone === "warning"
-        ? "bg-[#f7f7f7]"
-        : "bg-card";
-
-  return (
-    <div className={`min-w-0 rounded-[20px] border px-4 py-4 transition-colors duration-200 ${toneClass}`} style={{ borderColor: "hsl(var(--border-soft))" }}>
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-txt-tertiary">{label}</p>
-      <p className="mt-3 min-w-0 break-words text-[13px] leading-6 text-txt-secondary [overflow-wrap:anywhere]">{value}</p>
-    </div>
-  );
+function buildFixPrompt(finding: Finding): string {
+  const head = `${finding.file}:${finding.line}${finding.lineEnd > finding.line ? `-${finding.lineEnd}` : ""} [${finding.severity}] ${finding.title}`;
+  const fix = finding.fixSuggestions.find((entry) => entry.profile === "recommended") ?? finding.fixSuggestions[0];
+  return [
+    `Fix this code-review finding:`,
+    ``,
+    `Location: ${finding.file}:${finding.line}`,
+    `Severity: ${finding.severity} (confidence ${finding.confidence}%)`,
+    `Finding: ${finding.title}`,
+    `What is wrong: ${toAnalystCopy(finding.summary)}`,
+    `Why it matters: ${toAnalystCopy(finding.impact)}`,
+    `Evidence: ${toAnalystCopy(finding.evidence)}`,
+    `Recommended fix: ${fix ? toAnalystCopy(fix.description) : "Review the code and apply a minimal, behavior-preserving fix"}`,
+    ``,
+    `Instructions for the agent:`,
+    `- Apply a minimal fix that resolves the defect without changing intended behavior`,
+    `- Preserve existing tests and add coverage for the patched path`,
+    `- Keep the change scoped to this finding; do not refactor unrelated code`,
+    `- If the fix changes public signatures or return shapes, update callers`,
+  ].join("\n");
 }
 
 function StoryMiniCard({
@@ -428,34 +278,6 @@ function ExplainRow({
     <div className="grid min-w-0 gap-2 rounded-2xl border bg-[#f7f7f7] px-4 py-3 md:grid-cols-[110px_minmax(0,1fr)]" style={{ borderColor: "hsl(var(--border-soft))" }}>
       <p className="text-[11px] uppercase tracking-[0.16em] text-txt-tertiary">{label}</p>
       <p className={`min-w-0 break-words text-[13px] leading-6 [overflow-wrap:anywhere] ${tone === "danger" ? "text-status-critical" : "text-txt-secondary"}`}>{value}</p>
-    </div>
-  );
-}
-
-function SuggestionIcon({ profile }: { profile: "safe" | "fast" | "recommended" }) {
-  if (profile === "safe") return <ShieldCheck size={15} className="text-status-success" />;
-  if (profile === "fast") return <Zap size={15} className="text-status-high" />;
-  return <Gauge size={15} className="text-status-progress" />;
-}
-
-function FixModeCard({
-  icon: Icon,
-  title,
-  description,
-}: {
-  icon: React.ComponentType<{ size?: string | number; className?: string }>;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="min-w-0 rounded-2xl border bg-[#f7f7f7] px-4 py-4" style={{ borderColor: "hsl(var(--border-soft))" }}>
-      <div className="flex items-center gap-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-card/80">
-          <Icon size={15} className="text-txt-secondary" />
-        </div>
-        <p className="text-sm font-medium text-txt-primary">{title}</p>
-      </div>
-      <p className="mt-3 min-w-0 break-words text-[13px] leading-6 text-txt-secondary [overflow-wrap:anywhere]">{description}</p>
     </div>
   );
 }

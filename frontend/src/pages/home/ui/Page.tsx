@@ -178,7 +178,6 @@ export default function Page() {
     if (!["queued", "scanning"].includes(activeSession.session.status)) return;
     let isClosed = false;
     let fallbackTimer: number | null = null;
-    let livePollTimer: number | null = null;
     let fallbackAttempt = 0;
     const applyDetail = (detail: ScanSessionDetail) => {
       setActiveSession((current) => (hasMeaningfulSessionChange(current, detail) ? detail : current));
@@ -187,7 +186,7 @@ export default function Page() {
     };
     const pollWithBackoff = () => {
       if (isClosed) return;
-      const delay = fallbackAttempt < 2 ? 1000 : fallbackAttempt < 5 ? 2000 : 5000;
+      const delay = fallbackAttempt < 2 ? 2500 : fallbackAttempt < 5 ? 4000 : 8000;
       fallbackTimer = window.setTimeout(() => {
         void getScanSession(activeSessionId).then((detail) => {
           applyDetail(detail);
@@ -195,22 +194,13 @@ export default function Page() {
         }).catch(() => { fallbackAttempt += 1; pollWithBackoff(); });
       }, delay);
     };
-    const pollLiveSession = () => {
-      if (isClosed) return;
-      void getScanSession(activeSessionId).then((detail) => {
-        applyDetail(detail);
-        if (!["completed", "failed"].includes(detail.session.status)) livePollTimer = window.setTimeout(pollLiveSession, 1200);
-      }).catch(() => { livePollTimer = window.setTimeout(pollLiveSession, 1800); });
-    };
     let cleanup = () => undefined;
     if (typeof window !== "undefined" && "EventSource" in window) {
       cleanup = subscribeToScanEvents(activeSessionId, { onSession: applyDetail, onTerminal: applyDetail, onError: () => { if (!isClosed) pollWithBackoff(); } });
     } else pollWithBackoff();
-    livePollTimer = window.setTimeout(pollLiveSession, 700);
     return () => {
       isClosed = true; cleanup();
       if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
-      if (livePollTimer !== null) window.clearTimeout(livePollTimer);
     };
   }, [activeSession, activeSessionId, mergeSessionSummary, screen]);
 
@@ -298,9 +288,9 @@ export default function Page() {
     switch (screen) {
       case "home": return <HomeScreen key="home" onStartScan={handleStartScan} defaultPreset={runtimeSettings.defaultPreset} defaultScanMode={runtimeSettings.defaultScanMode} />;
       case "scan-empty": return <ScanEmptyScreen key="scan-empty" onStartScan={() => setScreen("home")} />;
-      case "scan-progress": return <ScanProgressScreen key="scan-progress" session={activeSession} />;
+      case "scan-progress": return <ScanProgressScreen key="scan-progress" session={activeSession} onStop={async () => { if (!activeSessionId) return; try { await deleteScanSession(activeSessionId); setSessions((c) => c.filter((i) => i.id !== activeSessionId)); setSessionOrder((c) => c.filter((id) => id !== activeSessionId)); setActiveSessionId(null); setActiveSession(null); setScreen("home"); toast.success("Review stopped"); } catch (e) { toast.error(toAnalystCopy(e instanceof Error ? e.message : "Unable to stop review")); } }} />;
       case "scan-completed": return <ScanResultsScreen key="scan-results" session={activeSession} onSelectFinding={(f) => handleSelectFinding(f, "scan-completed")} />;
-      case "finding-detail": return selectedFinding ? <FindingDetailPanel key="finding-detail" finding={selectedFinding} sessionId={activeSessionId} onDismiss={() => setScreen(findingOriginScreen === "repo-overview" ? "repo-overview" : "scan-completed")} onOpenDecisionCenter={() => {}} onSuggestFix={() => {}} /> : null;
+      case "finding-detail": return selectedFinding ? <FindingDetailPanel key="finding-detail" finding={selectedFinding} onDismiss={() => setScreen(findingOriginScreen === "repo-overview" ? "repo-overview" : "scan-completed")} onSuggestFix={() => {}} /> : null;
       case "repo-overview": return <RepoOverviewScreen key="repo-overview" session={activeSession} repoSummary={repoIntelligenceSummary} repoHotspotFeed={repoHotspotFeed} />;
       default: return <HomeScreen key="home" onStartScan={handleStartScan} defaultPreset={runtimeSettings.defaultPreset} defaultScanMode={runtimeSettings.defaultScanMode} />;
     }

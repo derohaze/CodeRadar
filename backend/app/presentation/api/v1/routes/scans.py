@@ -85,6 +85,7 @@ async def stream_scan_events(session_id: str, use_case: GetSessionUseCase = Depe
 
     async def event_generator():
         last_signature = None
+        idle_ticks = 0
         while True:
             current = await use_case.execute(session_id)
             if current is None:
@@ -101,8 +102,10 @@ async def stream_scan_events(session_id: str, use_case: GetSessionUseCase = Depe
                 session["current_phase"],
                 session["findings_count"],
                 session["candidate_findings_count"],
+                tuple(session.get("progress_logs", [])[-2:]),
             )
             if signature != last_signature:
+                idle_ticks = 0
                 event_name = "scan_progress"
                 if session["status"] == "completed":
                     event_name = "scan_completed"
@@ -110,10 +113,15 @@ async def stream_scan_events(session_id: str, use_case: GetSessionUseCase = Depe
                     event_name = "scan_failed"
                 yield f"event: {event_name}\ndata: {json.dumps(payload, separators=(',', ':'))}\n\n"
                 last_signature = signature
+            else:
+                idle_ticks += 1
+                # keep-alive comment to prevent proxy timeout without forcing client re-render
+                if idle_ticks % 6 == 0:
+                    yield ": keep-alive\n\n"
 
             if session["status"] in {"completed", "failed"}:
                 return
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(1.4)
 
     return StreamingResponse(
         event_generator(),

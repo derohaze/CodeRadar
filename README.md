@@ -9,7 +9,6 @@ CodeGuard employs a multi-runtime backend architecture designed for performance 
 | Runtime | Service | Port | Responsibility |
 |---|---|---|---|
 | Python | `python-api` | 9000 | FastAPI contracts, scan orchestration, AI routing, MongoDB/Redis coordination, remediation workflows |
-| Node.js | `node-io` | 7001 | Local runtime I/O health and process metadata |
 | Rust | `rust-indexer` | 7100 | Native bounded repository indexing and hotspot pre-analysis |
 
 ### Frontend
@@ -51,7 +50,6 @@ The platform includes specialized skills for various security domains:
 ## Getting Started
 
 ### Prerequisites
-- Node.js 20+ (for backend Node.js service)
 - Python 3.10+ (for Python API)
 - Rust and Cargo (optional, for Rust indexer)
 - MongoDB and Redis (for data persistence and queue)
@@ -65,25 +63,19 @@ The platform includes specialized skills for various security domains:
    pip install -r requirements.txt
    ```
 
-2. **Install Node.js Dependencies**:
-   ```bash
-   cd backend/node
-   pnpm install
-   ```
-
-3. **Build Rust Indexer** (optional but recommended):
+2. **Build Rust Indexer** (optional but recommended):
    ```bash
    cd backend/rust-indexer
    cargo build --release
    ```
 
-4. **Start All Backend Services**:
+3. **Start All Backend Services**:
    ```bash
    cd backend
    python main.py
    ```
 
-   This starts Python API, Node.js I/O, and Rust indexer (if built) automatically.
+   This starts the Python API and the Rust indexer (if built) automatically.
 
 ### Frontend Setup
 
@@ -134,8 +126,6 @@ codeguard/
 │   │   ├── domain/                   # Domain entities and repositories
 │   │   ├── infrastructure/           # AI agents, database, queue
 │   │   └── presentation/              # API routes and controllers
-│   ├── node/                         # Node.js I/O service
-│   │   └── src/                      # HTTP primitives and routes
 │   ├── rust-indexer/                 # Rust native indexer
 │   │   └── src/                      # Indexing and hotspot analysis
 │   └── main.py                       # Backend entry point
@@ -154,8 +144,6 @@ Key configuration options can be set through environment variables or runtime se
 - `APP_ENV` - Application environment (development/production)
 - `APP_HOST` - API host address
 - `APP_PORT` - API port (default: 9000)
-- `NODE_IO_HOST` - Node.js I/O host
-- `NODE_IO_PORT` - Node.js I/O port (default: 7001)
 - `RUST_INDEXER_ENABLED` - Enable Rust indexer
 - `RUST_INDEXER_AUTO_BUILD` - Auto-build Rust indexer on startup
 - `QUEUE_BACKEND` - Queue backend selection (redis/arq)
@@ -164,10 +152,8 @@ Key configuration options can be set through environment variables or runtime se
 
 ### Backend Development
 ```bash
-cd backend/node
-pnpm io:dev        # Start Node.js I/O service
-pnpm io:build      # Build Node.js service
-pnpm io:typecheck  # Type checking
+cd backend
+python main.py    # Start the Python API and Rust indexer
 ```
 
 ### Frontend Development

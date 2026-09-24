@@ -8,6 +8,10 @@ ACTIVE_RUNTIME_PROMPTS = frozenset(
         "path_reviewer.md",
         "finding_validator.md",
         "verdict_analyst.md",
+        "code_reviewer.md",
+        "code_reviewer_recheck.md",
+        "review_challenger.md",
+        "review_arbiter.md",
         "explain_prompt.md",
         "fix_prompt.md",
         "fix_validator_prompt.md",
@@ -55,6 +59,29 @@ PROMPT_PACKS = {
         "shared_scan_rules.md",
         "shared_framework_focus.md",
         "penetration_tester_prompt.md",
+    ),
+    # Code review lane: main reviewer -> challenger -> arbiter. Deliberately does
+    # NOT include shared_scan_rules.md: that file excludes everything that is not a
+    # source-to-sink path, which is why general defects never reached the client.
+    "code_reviewer.md": (
+        "shared_code_review_bar.md",
+        "shared_framework_focus.md",
+        "annotation_builder.md",
+        "code_reviewer.md",
+    ),
+    "code_reviewer_recheck.md": (
+        "shared_code_review_bar.md",
+        "shared_framework_focus.md",
+        "code_reviewer_recheck.md",
+    ),
+    "review_challenger.md": (
+        "shared_code_review_bar.md",
+        "shared_framework_focus.md",
+        "review_challenger.md",
+    ),
+    "review_arbiter.md": (
+        "shared_code_review_bar.md",
+        "review_arbiter.md",
     ),
 }
 

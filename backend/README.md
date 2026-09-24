@@ -5,7 +5,6 @@ The backend is split by runtime responsibility. There is no API gateway in the l
 | Runtime | Service | Port | Responsibility |
 |---|---|---:|---|
 | Python | `python-api` | 9000 | FastAPI contracts, scan orchestration, AI routing, MongoDB/Redis coordination, remediation workflows |
-| Node.js | `node-io` | 7001 | Local runtime I/O health and process metadata; it does not proxy Python API traffic |
 | Rust | `rust-indexer` | 7100 | Native bounded repository indexing and hotspot pre-analysis when the binary is built |
 
 ## Start All Backend Services
@@ -15,7 +14,7 @@ cd backend
 python main.py
 ```
 
-`backend/main.py` starts Python directly and launches Node I/O. Rust starts when `backend/rust-indexer` has a built binary. If Rust is not built, Python falls back to its existing analyzer and records `rust_indexer.available=false` in runtime metrics.
+`backend/main.py` starts Python directly. Rust starts when `backend/rust-indexer` has a built binary. If Rust is not built, Python falls back to its existing analyzer and records `rust_indexer.available=false` in runtime metrics.
 
 ## Build Rust Indexer
 
@@ -34,17 +33,11 @@ Frontend security API calls should target Python directly:
 http://127.0.0.1:9000/api/v1
 ```
 
-Node no longer owns `/api/v1/*`; calling those paths on `node-io` returns `404`.
-
 ## Code Layout
 
 ```text
 backend/
   app/                         Python API, scan orchestration, persistence coordination
-  node/src/
-    http/                      HTTP primitives: CORS and JSON responses
-    routes/                    Node-owned health/runtime routes
-    server/                    Node I/O server composition
   rust-indexer/src/
     indexer/                   Native repository traversal, signal extraction, hotspot ranking
     cli.rs                     Command-line contract

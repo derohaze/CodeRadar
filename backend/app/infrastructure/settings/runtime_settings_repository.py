@@ -37,9 +37,13 @@ class RuntimeSettingsRepository:
             plain = updates.pop("ai_api_key")
             if plain is not None and str(plain).strip():
                 updates["ai_api_key_encrypted"] = encrypt_api_key(str(plain).strip())
-            elif plain == "":
-                # Clear key if empty string
+            else:
+                # Clear key if empty string or None (disconnect)
                 updates["ai_api_key_encrypted"] = ""
+        # Handle explicit disconnect: ai_provider/model/base_url = None or "" -> clear to None
+        for field in ("ai_provider", "ai_model", "ai_base_url"):
+            if field in updates and (updates[field] is None or updates[field] == ""):
+                updates[field] = None
         # Normalize None base_url/model to allow clearing
         next_document = {
             **current,

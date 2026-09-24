@@ -41,9 +41,7 @@ export function RepoOverviewScreen({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
+      initial={{ opacity: 1, y: 0 }}
       className="hide-scrollbar flex-1 overflow-y-auto dotted-bg px-8 py-8"
     >
       <div className="mx-auto max-w-5xl space-y-4">

@@ -33,6 +33,10 @@ export function SidebarSessionItem({ session, index, isActive = false, onClick, 
           : { label: "Completed", className: "text-status-success", icon: GitPullRequest };
   const displayTitle = toAnalystCopy(session.title);
   const displayPreview = toAnalystCopy(session.preview);
+  const surfacedCount = session.findingsCount + session.candidateFindingsCount;
+  const issueLabel = surfacedCount === 0
+    ? "No issues"
+    : `${surfacedCount} issue${surfacedCount === 1 ? "" : "s"}`;
   const lifecycleSummary = getSessionLifecycleSummary(session);
   const lifecycleClassName =
     lifecycleSummary?.tone === "warning"
@@ -101,7 +105,7 @@ export function SidebarSessionItem({ session, index, isActive = false, onClick, 
             <span className="min-w-0 truncate">{session.repo}</span>
             <span aria-hidden="true">·</span>
             <span className="shrink-0">{session.time}</span>
-            <span className="ml-auto whitespace-nowrap text-txt-tertiary">{session.findingsCount} findings</span>
+            <span className="ml-auto whitespace-nowrap text-txt-tertiary">{issueLabel}</span>
           </div>
           {lifecycleSummary && (
             <p className={`mt-1 truncate text-[11px] font-medium ${lifecycleClassName}`}>
@@ -140,6 +144,12 @@ export function SidebarSessionItem({ session, index, isActive = false, onClick, 
               <TriangleAlert size={13} strokeWidth={1.8} />
               {session.warningCount} warning
             </span>
+            {session.candidateFindingsCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-txt-secondary">
+                <TriangleAlert size={13} strokeWidth={1.8} />
+                {session.candidateFindingsCount} candidate
+              </span>
+            )}
           </div>
         </div>
       </HoverCardContent>

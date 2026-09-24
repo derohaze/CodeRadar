@@ -55,7 +55,7 @@ export interface ProviderInfo {
 
 export interface ProviderTestPayload {
   provider: string;
-  apiKey: string;
+  apiKey?: string | null;
   baseUrl?: string | null;
   model?: string | null;
 }
@@ -213,7 +213,7 @@ export async function listProviders(): Promise<ProviderInfo[]> {
 export async function testProvider(payload: ProviderTestPayload): Promise<ProviderTestResult> {
   const data = await request<ProviderTestApiResponse>("/settings/providers/test", {
     method: "POST",
-    body: JSON.stringify({ provider: payload.provider, api_key: payload.apiKey, base_url: payload.baseUrl ?? null, model: payload.model ?? null }),
+    body: JSON.stringify({ provider: payload.provider, api_key: payload.apiKey ?? null, base_url: payload.baseUrl ?? null, model: payload.model ?? null }),
   });
   return { ok: data.ok, message: data.message, latencyMs: data.latency_ms };
 }
@@ -221,7 +221,7 @@ export async function testProvider(payload: ProviderTestPayload): Promise<Provid
 export async function listProviderModels(payload: ProviderTestPayload): Promise<ProviderModel[]> {
   const data = await request<ProviderModelsApiResponse>("/settings/providers/models", {
     method: "POST",
-    body: JSON.stringify({ provider: payload.provider, api_key: payload.apiKey, base_url: payload.baseUrl ?? null }),
+    body: JSON.stringify({ provider: payload.provider, api_key: payload.apiKey ?? null, base_url: payload.baseUrl ?? null }),
   });
   return data.models.map((m) => ({ id: m.id, name: m.name, created: m.created ?? null }));
 }

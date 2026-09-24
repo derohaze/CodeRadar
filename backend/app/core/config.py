@@ -65,8 +65,6 @@ class Settings(BaseSettings):
     penetration_sandbox_max_files: int = Field(default=120, ge=10, le=2000, alias="PENETRATION_SANDBOX_MAX_FILES")
     penetration_sandbox_max_total_mb: int = Field(default=50, ge=5, le=4096, alias="PENETRATION_SANDBOX_MAX_TOTAL_MB")
     api_reload_enabled: bool = Field(default=False, alias="API_RELOAD_ENABLED")
-    node_io_host: str = Field(default="127.0.0.1", alias="NODE_IO_HOST")
-    node_io_port: int = Field(default=7001, ge=1, le=65535, alias="NODE_IO_PORT")
     rust_indexer_enabled: bool = Field(default=True, alias="RUST_INDEXER_ENABLED")
     rust_indexer_host: str = Field(default="127.0.0.1", alias="RUST_INDEXER_HOST")
     rust_indexer_port: int = Field(default=7100, ge=1, le=65535, alias="RUST_INDEXER_PORT")

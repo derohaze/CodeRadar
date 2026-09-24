@@ -9,6 +9,7 @@ import type { SessionAnnotation } from "@/entities/session/model/types";
 import { SeverityBadge } from "@/entities/finding/ui/SeverityBadge";
 import type { ScanSessionDetail } from "@/shared/api/security";
 import { toAnalystCopy } from "@/shared/lib/analyst-copy";
+import { CopyButton } from "@/shared/ui/CopyButton";
 
 interface Props {
   session: ScanSessionDetail | null;
@@ -48,14 +49,14 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
   );
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={false}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
       className="hide-scrollbar flex-1 overflow-y-auto bg-surface px-6 py-6"
     >
       <div className="mx-auto max-w-5xl space-y-4">
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
           className="flex items-center justify-between rounded-xl border bg-card px-5 py-4"
@@ -74,7 +75,7 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
         </motion.div>
 
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.12 }}
           className={`rounded-xl border px-5 py-4 ${safeVerdict ? "bg-[#f7fbf7]" : "bg-card"}`}
@@ -95,7 +96,7 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
         </motion.div>
 
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.16 }}
           className="rounded-xl border bg-card px-4 py-4"
@@ -103,13 +104,22 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
         >
           <div className="grid gap-3 xl:grid-cols-[280px_1fr] xl:items-stretch">
             <div className="rounded-lg border bg-[#f4f4f5] px-4 py-4" style={{ borderColor: "hsl(var(--border-soft))" }}>
-              <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-txt-tertiary">Security score</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-txt-tertiary">Security score — Greptile 5-point</p>
               <div className="mt-2 flex items-end gap-2">
                 <span className="text-[34px] font-semibold leading-none tracking-[-0.05em] text-txt-primary">
-                  {hasSecurityScore ? session.session.securityScore : "â€”"}
+                  {hasSecurityScore ? session.session.securityScore : "—"}
                 </span>
                 <span className="pb-0.5 text-xs text-txt-tertiary">{hasSecurityScore ? "/100" : "unavailable"}</span>
+                {hasSecurityScore && (
+                  <span className="ml-2 rounded-full bg-black px-2 py-0.5 text-xs font-medium text-white">{Math.ceil((session.session.securityScore ?? 0)/20)}/5</span>
+                )}
               </div>
+              {hasSecurityScore && session.session.securityScore === 100 && (
+                <p className="mt-2 text-xs leading-5 text-emerald-600">5/5 — clean, no action needed. No risky paths, no prompt required</p>
+              )}
+              {hasSecurityScore && session.session.securityScore >= 95 && session.session.securityScore < 100 && (
+                <p className="mt-2 text-xs leading-5 text-txt-secondary">~5/5 — 1pt reserved for coverage completeness, no fix needed</p>
+              )}
               <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[#d4d4d4]">
                 <div className="h-full rounded-full bg-primary" style={{ width: `${hasSecurityScore ? session.session.securityScore : 0}%` }} />
               </div>
@@ -132,7 +142,7 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
         </motion.div>
 
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.18 }}
           className="rounded-xl border bg-card px-5 py-4"
@@ -169,7 +179,7 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
 
         {showWorkflowDetails && session.session.workflowSummary && (
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
+            initial={false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.19 }}
             className="rounded-lg border bg-card px-5 py-4"
@@ -304,7 +314,7 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
 
         {showTechnicalSignals && (
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
           className="grid gap-3 md:grid-cols-3"
@@ -329,7 +339,7 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
 
         {showTechnicalSignals && (
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.22 }}
           className="grid gap-3 md:grid-cols-3"
@@ -362,7 +372,7 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
 
         {hasAnalysisBrief && analysisBrief && (
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
+            initial={false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.23 }}
             className="grid gap-3 md:grid-cols-2"
@@ -419,19 +429,27 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
         />
 
         {hasCandidateFindings && (
-          <FindingsCard
-            title="Candidate findings"
-            subtitle="Needs review"
+          <CandidateFindingsCard
             findings={filteredCandidateFindings}
-            emptyMessage="No candidate finding was retained for manual review"
+            groups={groupCandidateFindings(filteredCandidateFindings)}
             onSelectFinding={onSelectFinding}
-            lowConfidence
           />
+        )}
+
+        {surfacedValidatedFindings.length > 0 && (
+          <div className="rounded-xl border bg-card px-5 py-4" style={{ borderColor: "hsl(var(--border-soft))" }}>
+            <p className="text-sm font-semibold text-txt-primary">Agent fix prompt — copy to Codex / Claude / Cursor</p>
+            <p className="mt-1 text-xs text-txt-tertiary">Greptile-style: 1-4/5 shows file:line + prompt, 5/5 shows no fix needed</p>
+            <pre className="mt-3 max-h-[220px] overflow-auto rounded-lg bg-[#0f0f0f] p-3 text-[11px] leading-5 text-white/80">{buildAgentFixPrompt(surfacedValidatedFindings)}</pre>
+            <div className="mt-3">
+              <CopyButton value={buildAgentFixPrompt(surfacedValidatedFindings)} label="Copy prompt" />
+            </div>
+          </div>
         )}
 
         {approvalQueue.length > 0 && (
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25 }}
           className="rounded-xl border bg-card px-5 py-4"
@@ -476,7 +494,7 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
 
         {session.session.annotations.length > 0 && (
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.26 }}
           className="rounded-xl border bg-card px-5 py-4"
@@ -546,6 +564,10 @@ function buildScoreExplanation(
   ].filter(Boolean);
   if (reductions.length > 0) {
     explanations.push(`Score reductions recorded by the scorer: ${reductions.join(", ")}.`);
+  } else if (typeof score === "number" && score === 100 && validatedFindingsCount === 0 && candidateFindingsCount === 0) {
+    explanations.push("Perfect score — no deductions, 5/5 Greptile. No risky paths or findings, no prompt needed");
+  } else if (typeof score === "number" && score >= 95 && validatedFindingsCount === 0) {
+    explanations.push("~5/5 Greptile — clean file, minor reserve (no attack paths found). No fix needed, no prompt required");
   }
 
   if (counts.activeValidatedCount > 0 || counts.approvalQueueCount > 0 || candidateFindingsCount > 0) {
@@ -649,7 +671,7 @@ function FindingsCard({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+                 initial={false}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
       className="overflow-hidden rounded-xl border bg-card"
@@ -798,8 +820,14 @@ function AnnotationRow({ annotation }: { annotation: SessionAnnotation }) {
         <div className="min-w-0">
           <p className="text-sm font-medium text-txt-primary">{annotation.title}</p>
           <p className="mt-1 text-xs text-txt-tertiary">
-            {annotation.file}:{annotation.lineStart}{annotation.lineEnd > annotation.lineStart ? `-${annotation.lineEnd}` : ""} - {annotation.pathHint || "Reviewed evidence path"}
+            {annotation.file}:{annotation.lineStart}{annotation.lineEnd > annotation.lineStart ? `-${annotation.lineEnd}` : ""} - {annotation.pathHint || annotation.claim || "Reviewed evidence path"}
           </p>
+          {annotation.recommendation ? (
+            <p className="mt-2 text-xs leading-5 text-txt-secondary">
+              <span className="font-medium text-txt-primary">Suggested fix: </span>
+              {annotation.recommendation}
+            </p>
+          ) : null}
         </div>
         <span className={`rounded-md px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] ${toneClass}`}>
           {annotation.tone}
@@ -852,6 +880,38 @@ function formatElapsedSeconds(value: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function buildAgentFixPrompt(findings: Finding[]) {
+  const greptileScore = findings.length === 0 ? "5/5" : findings.some(f => f.severity === "critical") ? "1/5" : findings.some(f => f.severity === "high") ? "2/5" : "3/5";
+  const header = greptileScore === "5/5"
+    ? "Code review: 5/5 — no fix needed, clean"
+    : `Code review: ${greptileScore} — fix the ${findings.length} finding(s) below`;
+  const sections = findings.slice(0, 8).map((f, index) => {
+    const fix = f.fixSuggestions.find((entry) => entry.profile === "recommended") ?? f.fixSuggestions[0];
+    const range = f.lineEnd > f.line ? `${f.line}-${f.lineEnd}` : `${f.line}`;
+    return [
+      `### ${index + 1}. ${f.title}`,
+      `Location: ${f.file}:${range}`,
+      `Severity: ${f.severity} (confidence ${f.confidence}%)`,
+      `What is wrong: ${toAnalystCopy(f.summary) || f.summary}`,
+      `Why it matters: ${toAnalystCopy(f.impact) || f.impact}`,
+      f.evidence ? `Evidence: ${toAnalystCopy(f.evidence) || f.evidence}` : null,
+      fix ? `Recommended fix: ${toAnalystCopy(fix.description) || fix.description}` : null,
+    ].filter((line): line is string => Boolean(line)).join("\n");
+  }).join("\n\n");
+  return [
+    header,
+    "",
+    sections,
+    "",
+    "Fix prompt for Codex / Claude / Cursor:",
+    "- Read each file at the reported location and apply the recommended fix",
+    "- Keep the change minimal and behavior-preserving; do not refactor unrelated code",
+    "- Preserve existing tests and add coverage for every patched path",
+    "- If a fix changes a public signature or return shape, update its callers",
+    "- Run the project's typecheck and tests, then report the diff for each finding",
+  ].join("\n");
+}
+
 function countSeverities(findings: Finding[]) {
   return findings.reduce(
     (summary, finding) => {
@@ -866,3 +926,101 @@ function countSeverities(findings: Finding[]) {
     } satisfies Record<Finding["severity"], number>,
   );
 }
+
+interface CandidateLocation {
+  id: string;
+  file: string;
+  line: number;
+  lineEnd: number;
+}
+
+interface CandidateGroup {
+  title: string;
+  category: string;
+  severity: string;
+  confidence: number;
+  locations: CandidateLocation[];
+}
+
+function groupCandidateFindings(findings: Finding[]): CandidateGroup[] {
+  const groups = new Map<string, CandidateGroup>();
+  for (const finding of findings) {
+    const key = `${finding.title}|${finding.category}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.locations.push({
+        id: finding.id,
+        file: finding.file,
+        line: finding.line,
+        lineEnd: finding.lineEnd,
+      });
+      continue;
+    }
+    groups.set(key, {
+      title: finding.title,
+      category: finding.category,
+      severity: finding.severity,
+      confidence: finding.confidence,
+      locations: [{ id: finding.id, file: finding.file, line: finding.line, lineEnd: finding.lineEnd }],
+    });
+  }
+  return Array.from(groups.values());
+}
+
+function CandidateFindingsCard({
+  findings,
+  groups,
+  onSelectFinding,
+}: {
+  findings: Finding[];
+  groups: CandidateGroup[];
+  onSelectFinding: (finding: Finding) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border bg-card" style={{ borderColor: "hsl(var(--border-soft))" }}>
+      <div className="px-5 pb-3 pt-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-txt-primary">Candidate findings</h3>
+            <p className="mt-1 text-xs uppercase tracking-[0.16em] text-txt-tertiary">Needs review</p>
+          </div>
+          <span className="text-xs uppercase tracking-[0.16em] text-txt-tertiary">{groups.length} pattern(s)</span>
+        </div>
+      </div>
+      <div className="divide-y" style={{ borderColor: "hsl(var(--border-soft))" }}>
+        {groups.map((group) => (
+          <div key={`${group.title}|${group.category}`} className="px-5 py-4">
+            <div className="flex items-center gap-4">
+              <SeverityBadge severity={group.severity as Finding["severity"]} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-txt-primary">{group.title}</p>
+                <p className="mt-1 text-xs text-txt-tertiary">
+                  {group.locations.length} location{group.locations.length === 1 ? "" : "s"} · {group.category}
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              {group.locations.slice(0, 6).map((location) => (
+                <button
+                  key={location.id}
+                  onClick={() => {
+                    const target = findings.find((entry) => entry.id === location.id);
+                    if (target) onSelectFinding(target);
+                  }}
+                  className="rounded-md bg-muted px-2 py-1 font-mono text-[11px] text-txt-secondary transition-colors hover:bg-secondary hover:text-txt-primary"
+                >
+                  {location.file}:{location.line}
+                </button>
+              ))}
+              {group.locations.length > 6 && (
+                <span className="text-[11px] text-txt-tertiary">+{group.locations.length - 6} more</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+

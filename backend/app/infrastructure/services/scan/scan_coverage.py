@@ -183,7 +183,9 @@ def build_coverage_snapshot(
     scan_mode: str = "fast",
     path_units: list[dict] | None = None,
 ) -> dict:
-    eligible_files = len(file_segments)
+    # Coverage is measured against every supported indexed file, not only files
+    # that produced non-empty segments. A folder review must make omissions visible.
+    eligible_files = int(profile.get("file_count", len(file_segments)) or len(file_segments))
     non_reviewable_files = [
         {
             "file": item["file"],
@@ -194,11 +196,12 @@ def build_coverage_snapshot(
     ]
     reviewed_file_names = {item["file"] for item in work_items}
     reviewed_file_names.update(item["file"] for item in non_reviewable_files)
-    reviewed_files = len(reviewed_file_names)
+    reviewed_files = min(eligible_files, len(reviewed_file_names))
     total_blocks = sum(item["block_count"] for item in file_segments)
     reviewed_blocks = len({item["block_id"] for item in work_items})
     total_lines = sum(item["line_count"] for item in file_segments)
-    reviewed_lines = sum(int(item["end_line"]) - int(item["start_line"]) + 1 for item in work_items)
+    raw_reviewed_lines = sum(int(item["end_line"]) - int(item["start_line"]) + 1 for item in work_items)
+    reviewed_lines = min(raw_reviewed_lines, total_lines)
     total_paths = len(path_units or [])
     traced_paths = total_paths
     file_ratio = reviewed_files / max(eligible_files, 1)
@@ -233,7 +236,14 @@ def build_coverage_snapshot(
         "traced_paths_count": traced_paths,
         "total_paths_count": total_paths,
         "skipped_files_count": max(0, eligible_files - reviewed_files),
-        "excluded_files": non_reviewable_files,
+        "excluded_files": non_reviewable_files + [
+            {
+                "file": str(item.get("file", "")),
+                "reason": "Not included in the review work queue",
+            }
+            for item in file_segments
+            if item.get("file") not in reviewed_file_names and int(item.get("block_count", 0)) > 0
+        ],
         "high_risk_files_count": len([item for item in repository_artifacts["hotspot_files"] if item["score"] >= 8]),
         "confirmed_findings_count": len(findings),
     }

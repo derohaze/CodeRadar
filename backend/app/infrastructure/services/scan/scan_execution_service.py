@@ -2,6 +2,7 @@ import asyncio
 import copy
 import logging
 from pathlib import Path
+import re
 import time
 
 from bson import ObjectId
@@ -53,8 +54,23 @@ from app.infrastructure.services.scan.segmentation_planning import build_scan_wo
 from app.infrastructure.services.scan.risk_prioritization import prioritize_review_queue
 from app.infrastructure.services.repository.source_sink_registry import build_source_sink_registry
 from app.infrastructure.settings.runtime_settings_service import RuntimeSettingsService
+from app.infrastructure.services.scan.agent_memory import hallucination_guard, remember_scan
+from app.infrastructure.services.scan.code_review_debate import CodeReviewDebate
 
 logger = logging.getLogger("codeguard.scan")
+
+# The debate lane is three model passes back to back. Cap it so a slow provider
+# degrades the review instead of stalling the scan.
+CODE_REVIEW_DEBATE_TIMEOUT_SECONDS = 96.0
+
+_TITLE_STOPWORDS = frozenset(
+    {
+        "a", "an", "and", "are", "as", "at", "be", "been", "but", "by", "can",
+        "for", "from", "in", "into", "is", "it", "its", "may", "never", "not",
+        "of", "on", "or", "that", "the", "this", "to", "was", "when", "which",
+        "will", "with", "without",
+    }
+)
 
 
 def create_initial_session(source_path: str, target_type: str, preset: str, scan_mode: str = "deep", interactive: bool = True) -> ScanSessionEntity:
@@ -144,6 +160,7 @@ def build_scan_analysis_context(
     profile: dict,
     framework_profile: dict,
     scan_mode: str,
+    target_type: str = "folder",
 ) -> dict:
     repository_artifacts = build_repository_artifacts(source_root, files, profile)
     repository_graph = build_repository_graph(source_root, files, framework_profile)
@@ -152,7 +169,17 @@ def build_scan_analysis_context(
     program_database = build_program_database(source_root, files)
     codeql_lite_findings = run_codeql_lite_queries(program_database)
     file_segments = build_file_segments(files, source_root, scan_mode=scan_mode)
-    native_index = build_native_index(source_root)
+    # File scope should not trigger full Rust directory walk — synthetic minimal index
+    if target_type == "file" and len(files) == 1:
+        native_index = {
+            "available": False,
+            "engine": "rust-indexer",
+            "reason": "single_file_scope",
+            "files_indexed": 1,
+            "elapsed_ms": 0,
+        }
+    else:
+        native_index = build_native_index(source_root)
     return {
         "repository_artifacts": repository_artifacts,
         "repository_graph": repository_graph,
@@ -327,6 +354,7 @@ class ScanExecutionService:
                     profile,
                     framework_profile,
                     session.scan_mode,
+                    session.target_type,
                 )
                 repository_artifacts = analysis_context["repository_artifacts"]
                 repository_graph = analysis_context["repository_graph"]
@@ -371,63 +399,18 @@ class ScanExecutionService:
             heuristic_candidates.extend(codeql_lite_findings)
             repository_inventory = build_repository_inventory(profile, files)
 
-            logs.append(f"Indexed {profile['file_count']} code files across {profile['directory_count']} directories.")
-            if native_index.get("available"):
-                logs.append(
-                    "Rust native indexer enriched the repository map "
-                    f"({native_index.get('files_indexed', 0)} files in {native_index.get('elapsed_ms', 0)} ms)."
-                )
+            # Concise Greptile-style inventory: one line that matters, not 10
+            is_single_file = session.target_type == "file"
+            if is_single_file:
+                logs.append(f"Indexed 1 file ({Path(session.source_path).name}) — {sum(item['block_count'] for item in file_segments)} review blocks")
             else:
-                logs.append(f"Rust native indexer unavailable ({native_index.get('reason', 'unknown')}); Python review continued.")
+                logs.append(f"Indexed {profile['file_count']} files → {len(file_segments)} with {sum(item['block_count'] for item in file_segments)} blocks, {traced_paths['summary']['candidate_path_count']} paths")
             if collection_stats.get("truncated"):
-                logs.append(
-                    "Repository indexing reached the enterprise safety budget; analysis continues on the prioritized file set."
-                )
-            if collection_stats.get("unreadable_directories", 0):
-                logs.append(f"Skipped {collection_stats['unreadable_directories']} unreadable directorie(s) during indexing.")
-            if repository_artifacts["coverage"].get("local_analysis_truncated"):
-                logs.append(
-                    "Local static analysis prioritized "
-                    f"{repository_artifacts['coverage']['local_analysis_files']} of "
-                    f"{repository_artifacts['coverage']['eligible_files']} supported files for bounded processing."
-                )
+                logs.append("Index hit safety budget; analyzing prioritized subset")
             if framework_profile["frameworks"]:
-                logs.append(f"Detected stack hints: {', '.join(framework_profile['frameworks'][:4])}.")
-            else:
-                logs.append(f"Detected primary languages: {', '.join(profile['languages'][:4]) or 'unknown'}.")
-            logs.append(
-                (
-                    "Framework markers: none; language profile: "
-                    if framework_profile["primary_framework"] == "unknown"
-                    and framework_profile["support_matrix"]["primary"]["stack"] != "unknown"
-                    else "Framework confidence: "
-                )
-                + f"{framework_profile['support_matrix']['primary']['stack']} "
-                + f"({framework_profile['support_matrix']['primary']['confidence']})."
-            )
-            logs.append(
-                f"Mapped {repository_artifacts['coverage']['route_files']} route files, "
-                f"{repository_artifacts['coverage']['auth_files']} auth files, and "
-                f"{repository_artifacts['coverage']['sink_candidates']} sensitive sink markers."
-            )
-            logs.append(
-                f"Built repository graphs with {repository_graph['summary']['import_edges']} import edges, "
-                f"{repository_graph['summary']['route_files']} route nodes, and "
-                f"{traced_paths['summary']['candidate_path_count']} candidate source-to-sink paths."
-            )
-            logs.append(
-                "Built CodeQL-lite Program DB with "
-                f"{program_database.get('summary', {}).get('nodes', 0)} nodes, "
-                f"{program_database.get('summary', {}).get('edges', 0)} edges, and "
-                f"{len(codeql_lite_findings)} query result(s)."
-            )
-            if file_segments:
-                logs.append(
-                    f"Segmented {len(file_segments)} supported files into "
-                    f"{sum(item['block_count'] for item in file_segments)} reviewable code blocks."
-                )
-            if excluded_review_file_count:
-                logs.append(f"{excluded_review_file_count} file(s) contained no reviewable code blocks and will be treated as excluded from block review.")
+                logs.append(f"Stack: {', '.join(framework_profile['frameworks'][:3])}")
+            elif profile["languages"]:
+                logs.append(f"Languages: {', '.join(profile['languages'][:3])}")
 
             await self._update_with_logs(
                 session_id,
@@ -473,40 +456,59 @@ class ScanExecutionService:
                 ),
             )
 
-            try:
-                repository_map = await detection_agent.map_repository(
-                    project_name=session.repo,
-                    source_path=session.source_path,
-                    repository_profile=profile,
-                    repository_artifacts={
-                        **repository_artifacts,
-                        "framework_profile": framework_profile,
-                        "repository_graph_summary": repository_graph["summary"],
-                        "security_registry_summary": security_registry["summary"],
-                        "path_summary": traced_paths["summary"],
-                        "native_index": native_index,
-                    },
-                    preset=session.preset,
-                )
-                self._append_runtime_events(logs, ai_client)
-            except ExternalAIServiceError as exc:
-                if not exc.retryable:
-                    raise
-                logger.warning("Repository mapping AI step failed; using deterministic fallback map", exc_info=exc)
+            # AI is mandatory for folder reviews: local indexing discovers scope, but it must
+            # never be presented as an AI review when the provider is unavailable.
+            ai_degraded = False
+            if session.target_type == "file":
                 repository_map = build_repository_map_fallback(
                     profile=profile,
                     repository_artifacts=repository_artifacts,
                     traced_paths=traced_paths,
                     framework_profile=framework_profile,
                 )
-                logs.append("Repository mapping AI step was unavailable; using deterministic fallback map")
+                logs.append("Single-file scope — using local analysis (no AI mapping needed)")
+            else:
+                try:
+                    repository_map = await asyncio.wait_for(
+                        detection_agent.map_repository(
+                            project_name=session.repo,
+                            source_path=session.source_path,
+                            repository_profile=profile,
+                            repository_artifacts={
+                                **repository_artifacts,
+                                "framework_profile": framework_profile,
+                                "repository_graph_summary": repository_graph["summary"],
+                                "security_registry_summary": security_registry["summary"],
+                                "path_summary": traced_paths["summary"],
+                                "native_index": native_index,
+                            },
+                            preset=session.preset,
+                        ),
+                        timeout=32.0,
+                    )
+                    self._append_runtime_events(logs, ai_client)
+                except (ExternalAIServiceError, asyncio.TimeoutError) as exc:
+                    logger.warning("Repository mapping AI step failed", exc_info=exc)
+                    # Preserve the deterministic map for diagnostics, but stop the
+                    # scan before scoring: an unavailable AI provider is not a clean review.
+                    repository_map = build_repository_map_fallback(
+                        profile=profile,
+                        repository_artifacts=repository_artifacts,
+                        traced_paths=traced_paths,
+                        framework_profile=framework_profile,
+                    )
+                    raise ExternalAIServiceError(
+                        "The AI provider was unavailable during repository mapping; no AI verdict was produced",
+                        provider=getattr(exc, "provider", "ai_provider"),
+                        retryable=True,
+                        failure_kind=getattr(exc, "failure_kind", "timeout"),
+                    ) from exc
 
-            if repository_map.get("review_note"):
-                logs.append(repository_map["review_note"])
-            if repository_map.get("coverage_note"):
-                logs.append(repository_map["coverage_note"])
-            for boundary in repository_map.get("trust_boundaries", [])[:3]:
-                logs.append(boundary)
+            if session.target_type != "file":
+                if repository_map.get("review_note"):
+                    logs.append(repository_map["review_note"])
+                if repository_map.get("coverage_note"):
+                    logs.append(repository_map["coverage_note"])
 
             await self._update_with_logs(
                 session_id,
@@ -563,20 +565,10 @@ class ScanExecutionService:
             path_units = prioritized["path_units"]
             segmentation_summary = work_units["segmentation_summary"]
             review_queue_summary = prioritized["review_queue_summary"]
-            logs.append(
-                f"Prepared {len(work_items)} prioritized review items from "
-                f"{repository_artifacts['coverage']['eligible_files']} eligible code files."
-            )
-            if session.scan_mode == "deep":
-                logs.append(
-                    f"Deep Scan scheduled {segmentation_summary['review_block_units']} review blocks and "
-                    f"{segmentation_summary['path_units_total']} traced path units."
-                )
+            if session.target_type == "file":
+                logs.append(f"Queued {len(work_items)} blocks for file review")
             else:
-                logs.append(
-                    f"Fast Scan narrowed review to {segmentation_summary['review_block_units']} blocks and "
-                    f"{segmentation_summary['path_units_total']} high-risk paths."
-                )
+                logs.append(f"Queued {len(work_items)} blocks + {len(path_units)} paths ({session.scan_mode})")
 
             await self._update_with_logs(
                 session_id,
@@ -620,12 +612,44 @@ class ScanExecutionService:
             ai_findings: list[dict] = []
             repository_summary = repository_map.get("repository_summary", "")
             support_confidence = framework_profile["support_matrix"]["primary"]["confidence"]
-            batches = adaptive_chunk_work_items(
-                work_items,
-                scan_mode=session.scan_mode,
-                support_confidence=support_confidence,
+            is_single_file = session.target_type == "file"
+            # The taint lane skips a file with no traced path: there is nothing for
+            # it to trace. The code review lane still reviews that file, because
+            # most defects are not taint paths.
+            code_review_batches: list[list[dict]] = (
+                []
+                if ai_degraded
+                else adaptive_chunk_work_items(
+                    work_items,
+                    scan_mode=session.scan_mode,
+                    support_confidence=support_confidence,
+                )
             )
-            total_batches = len(batches) or 1
+            if ai_degraded:
+                raise ExternalAIServiceError(
+                    "The AI provider was unavailable; no AI code review was produced",
+                    provider="ai_provider",
+                    retryable=True,
+                    failure_kind="runtime",
+                )
+            elif is_single_file and not heuristic_candidates and traced_paths["summary"]["candidate_path_count"] == 0:
+                logs.append("No heuristic signals in file — skipping AI path review for speed")
+                batches = []
+                total_batches = 0
+            else:
+                batches = adaptive_chunk_work_items(
+                    work_items,
+                    scan_mode=session.scan_mode,
+                    support_confidence=support_confidence,
+                )
+                total_batches = len(batches) or 1
+                if ai_degraded:
+                    batches = batches[:1]
+                    total_batches = min(total_batches, 1)
+                elif total_batches > 2 and not heuristic_candidates:
+                    batches = batches[:1]
+                    total_batches = 1
+                    logs.append("Clean file — limited AI review to 1 batch")
 
             for index, batch in enumerate(batches, start=1):
                 batch_files = ", ".join(item["file"] for item in batch[:3])
@@ -674,20 +698,23 @@ class ScanExecutionService:
                     ),
                 )
                 try:
-                    review = await detection_agent.review_paths(
-                        project_name=session.repo,
-                        source_path=session.source_path,
-                        repository_profile=profile,
-                        repository_map={
-                            **repository_map,
-                            "framework_profile": framework_profile,
-                            "repository_graph_summary": repository_graph["summary"],
-                            "path_summary": traced_paths["summary"],
-                        },
-                        work_items=batch,
-                        batch_index=index,
-                        total_batches=total_batches,
-                        preset=session.preset,
+                    review = await asyncio.wait_for(
+                        detection_agent.review_paths(
+                            project_name=session.repo,
+                            source_path=session.source_path,
+                            repository_profile=profile,
+                            repository_map={
+                                **repository_map,
+                                "framework_profile": framework_profile,
+                                "repository_graph_summary": repository_graph["summary"],
+                                "path_summary": traced_paths["summary"],
+                            },
+                            work_items=batch,
+                            batch_index=index,
+                            total_batches=total_batches,
+                            preset=session.preset,
+                        ),
+                        timeout=32.0,
                     )
                     self._append_runtime_events(logs, ai_client)
                     if review.get("review_note"):
@@ -739,18 +766,60 @@ class ScanExecutionService:
                             coverage_percent=min(92, round((reviewed_blocks / max(1, len(work_items))) * 100)),
                         ),
                     )
-                except ExternalAIServiceError as exc:
-                    logs.append(
-                        "AI review was temporarily unavailable; continuing with heuristic signals only."
-                    )
-                    logger.warning("AI review failed during path review; continuing without AI batch", exc_info=exc)
+                except (ExternalAIServiceError, asyncio.TimeoutError) as exc:
+                    logger.warning("AI review failed during path review", exc_info=exc)
                     self._append_runtime_events(logs, ai_client)
-                    break
+                    raise ExternalAIServiceError(
+                        "The AI provider was unavailable during path review; no AI verdict was produced",
+                        provider=getattr(exc, "provider", "ai_provider"),
+                        retryable=True,
+                        failure_kind=getattr(exc, "failure_kind", "timeout"),
+                    ) from exc
 
             heuristic_candidates = attach_path_context(heuristic_candidates, traced_paths)
             ai_findings = attach_path_context(ai_findings, traced_paths)
             candidate_findings = cluster_findings(heuristic_candidates + ai_findings)
             logs.append(f"Collected {len(candidate_findings)} candidate findings before strict validation.")
+
+            # --- Code review lane: main reviewer -> challenger -> final call ---
+            code_review_findings: list[dict] = []
+            code_review_summary = ""
+            if code_review_batches and getattr(detection_agent, "supports_debate_lane", lambda: False)():
+                logs.append(f"Code review is running {len(code_review_batches)} batch(es) through the two-model debate.")
+                debate = CodeReviewDebate(detection_agent, logs=logs)
+                try:
+                    review_result = await asyncio.wait_for(
+                        debate.run(
+                            project_name=session.repo,
+                            source_path=session.source_path,
+                            repository_profile=profile,
+                            repository_map=repository_map,
+                            batches=code_review_batches,
+                            preset=session.preset,
+                            run_arbitration=session.scan_mode != "fast",
+                        ),
+                        timeout=CODE_REVIEW_DEBATE_TIMEOUT_SECONDS,
+                    )
+                except (asyncio.TimeoutError, TimeoutError, ExternalAIServiceError) as exc:
+                    logger.warning("Code review debate lane failed; continuing with the security lane", exc_info=exc)
+                    logs.append("Code review debate did not finish; the report reflects the security lane only.")
+                    review_result = {"summary": "", "findings": [], "debate_summary": {}, "degraded": True}
+
+                code_review_findings = review_result.get("findings", []) or []
+                code_review_summary = str(review_result.get("summary", "")).strip()
+                debate_summary = review_result.get("debate_summary", {}) or {}
+                if debate_summary:
+                    logs.append(
+                        "Code review debate: {kept} kept, {withdrawn} withdrawn, {contested} contested "
+                        "after {challenger_verdicts} challenge(s).".format(
+                            kept=debate_summary.get("kept", 0),
+                            withdrawn=debate_summary.get("withdrawn", 0),
+                            contested=debate_summary.get("contested", 0),
+                            challenger_verdicts=debate_summary.get("challenger_verdicts", 0),
+                        )
+                    )
+                if code_review_summary and not repository_summary:
+                    repository_summary = code_review_summary
 
             await self._update_with_logs(
                 session_id,
@@ -787,23 +856,36 @@ class ScanExecutionService:
                 ),
             )
 
-            validated = await self._run_validation_passes(
-                session=session,
-                detection_agent=detection_agent,
-                profile=profile,
-                repository_map=repository_map,
-                framework_profile=framework_profile,
-                repository_graph=repository_graph,
-                traced_paths=traced_paths,
-                candidate_findings=candidate_findings,
-                mode_config=mode_config,
-                logs=logs,
-            )
+            if ai_degraded:
+                raise ExternalAIServiceError(
+                    "The AI provider was unavailable during finding validation; no AI verdict was produced",
+                    provider="ai_provider",
+                    retryable=True,
+                    failure_kind="runtime",
+                )
+            else:
+                validated = await self._run_validation_passes(
+                    session=session,
+                    detection_agent=detection_agent,
+                    profile=profile,
+                    repository_map=repository_map,
+                    framework_profile=framework_profile,
+                    repository_graph=repository_graph,
+                    traced_paths=traced_paths,
+                    candidate_findings=candidate_findings,
+                    mode_config=mode_config,
+                    logs=logs,
+                )
             self._append_runtime_events(logs, ai_client)
             merged_validated_findings = cluster_findings(merge_validated_findings(
                 validated.get("findings", []),
                 heuristic_candidates,
             ))
+            # Fold the code review lane in before the anchor filter so its findings
+            # get a real evidence snippet and a clamped line range like the rest.
+            merged_validated_findings = cluster_findings(
+                merge_review_lanes(merged_validated_findings, code_review_findings)
+            )
             merged_validated_findings = cluster_findings(filter_validated_findings(
                 merged_validated_findings,
                 source_root=source_root,
@@ -818,6 +900,11 @@ class ScanExecutionService:
                 traced_paths=traced_paths,
             )
             merged_validated_findings = cluster_findings(merged_validated_findings)
+            # Local memory hallucination guard (Greptile-style: learn from past scans)
+            try:
+                merged_validated_findings = hallucination_guard(merged_validated_findings, session.source_fingerprint)
+            except Exception:
+                pass
             candidate_review_findings = build_candidate_review_findings(
                 candidate_findings=candidate_findings,
                 validated_findings=merged_validated_findings,
@@ -839,6 +926,10 @@ class ScanExecutionService:
             candidate_entities = dict_findings_to_entities(candidate_review_findings)
             findings.sort(key=lambda item: (severity_rank(item.severity), -item.confidence, item.file, item.line))
             candidate_entities.sort(key=lambda item: (severity_rank(item.severity), -item.confidence, item.file, item.line))
+            try:
+                remember_scan(session.source_fingerprint, merged_validated_findings)
+            except Exception:
+                pass
             annotations = build_annotations(merged_validated_findings)
             coverage_snapshot = build_coverage_snapshot(
                 profile=profile,
@@ -919,34 +1010,50 @@ class ScanExecutionService:
                 ),
             )
 
-            try:
-                verdict_summary = await ai_client.summarize_verdict(
-                    project_name=session.repo,
-                    source_path=session.source_path,
-                    repository_profile=profile,
-                    repository_map={
-                        **repository_map,
-                        "framework_profile": framework_profile,
-                        "repository_graph_summary": repository_graph["summary"],
-                        "scan_plan": scan_plan,
-                        "security_registry_summary": security_registry["summary"],
-                        "coverage_snapshot": coverage_snapshot,
-                        "score_rationale": score_calibration["rationale"],
-                        "path_summary": traced_paths["summary"],
-                    },
-                    findings=merged_validated_findings,
-                    security_score=security_score,
-                    preset=session.preset,
+            if ai_degraded:
+                raise ExternalAIServiceError(
+                    "The AI provider was unavailable; no AI verdict was produced",
+                    provider="ai_provider",
+                    retryable=True,
+                    failure_kind="runtime",
                 )
-            except ExternalAIServiceError as exc:
-                logger.warning("AI verdict summary failed; using deterministic summary", exc_info=exc)
-                logs.append("AI verdict summary was unavailable; using deterministic summary")
+            elif is_single_file and not findings and not candidate_entities:
                 verdict_summary = {
                     "review_note": "",
                     "repository_summary": build_repository_summary(profile, repository_artifacts, findings),
-                    "coverage_summary": "Coverage summary unavailable due to AI service interruption",
+                    "coverage_summary": coverage_snapshot["coverage_summary"],
                     "analysis_brief": None,
                 }
+                logs.append("Clean file — verdict built from deterministic analysis")
+            else:
+                try:
+                    verdict_summary = await ai_client.summarize_verdict(
+                        project_name=session.repo,
+                        source_path=session.source_path,
+                        repository_profile=profile,
+                        repository_map={
+                            **repository_map,
+                            "framework_profile": framework_profile,
+                            "repository_graph_summary": repository_graph["summary"],
+                            "scan_plan": scan_plan,
+                            "security_registry_summary": security_registry["summary"],
+                            "coverage_snapshot": coverage_snapshot,
+                            "score_rationale": score_calibration["rationale"],
+                            "path_summary": traced_paths["summary"],
+                        },
+                        findings=merged_validated_findings,
+                        security_score=security_score,
+                        preset=session.preset,
+                    )
+                except ExternalAIServiceError as exc:
+                    logger.warning("AI verdict summary failed; using deterministic summary", exc_info=exc)
+                    logs.append("AI verdict summary was unavailable; using deterministic summary")
+                    verdict_summary = {
+                        "review_note": "",
+                        "repository_summary": build_repository_summary(profile, repository_artifacts, findings),
+                        "coverage_summary": "Coverage summary unavailable due to AI service interruption",
+                        "analysis_brief": None,
+                    }
             self._append_runtime_events(logs, ai_client)
             if verdict_summary.get("review_note"):
                 logs.append(verdict_summary["review_note"])
@@ -1002,7 +1109,7 @@ class ScanExecutionService:
                     "current_phase": "Completed",
                     "elapsed_seconds": int(time.monotonic() - started_at),
                     "preview": build_preview(findings, profile["file_count"], repository_artifacts["coverage"]["reviewed_hotspots"]),
-                    "progress_logs": logs[-12:],
+                    "progress_logs": [l for l in logs if l.strip()][-8:],
                     "runtime_metrics": runtime_metrics,
                     "scan_plan": scan_plan,
                     "repository_summary": repository_summary,
@@ -1865,6 +1972,22 @@ def filter_validated_findings(
     files: list[Path],
     traced_paths: dict,
 ) -> list[dict]:
+    """Keep findings that are anchored to code that actually exists.
+
+    Two lanes flow through here and they are held to different bars.
+
+    Taint lane: the finding claims an untrusted input reaches a sensitive sink.
+    That claim is only worth showing if we can name the source, the sink, and a
+    path the local tracer also found, so it keeps the strict rules.
+
+    Everything else: a code review finding is a defect at a location. An
+    off-by-one, a mutable default, a leaked handle and an
+    assignment-in-condition all have no source and no sink. Requiring them was
+    dropping every one of them, which is why files came back clean. These only
+    need a real file, a real line inside it, and a snippet we can show.
+
+    Both lanes share the anti-hallucination rule: no snippet, no finding.
+    """
     file_lookup = {path.relative_to(source_root).as_posix(): path for path in files if path.is_file()}
     valid_paths = {item.get("path_hint", ""): item for item in traced_paths.get("paths", []) if item.get("path_hint")}
     filtered: list[dict] = []
@@ -1875,18 +1998,31 @@ def filter_validated_findings(
             continue
         line_start = max(1, int(item.get("line", 1)))
         evidence = extract_evidence(path, line_start, int(item.get("line_end", line_start)))
+        if not evidence["snippet"]:
+            continue
+
         path_hint = str(item.get("path_hint", "")).strip()
         source_hint = str(item.get("source_hint", "")).strip()
         sink_hint = str(item.get("sink_hint", "")).strip()
-        if not source_hint or not sink_hint or not path_hint or not evidence["snippet"]:
-            continue
-        traced_path = valid_paths.get(path_hint)
-        if valid_paths and traced_path is None and str(item.get("source", "")) != "codeql_lite":
-            continue
-        if traced_path and traced_path.get("has_sanitizer") and int(item.get("confidence", 0)) < 90:
-            continue
+
+        is_taint_finding = bool(source_hint and sink_hint and path_hint)
+        if is_taint_finding:
+            # Taint lane: the path must be one the local tracer also found.
+            traced_path = valid_paths.get(path_hint)
+            if valid_paths and traced_path is None and str(item.get("source", "")) != "codeql_lite":
+                continue
+            if traced_path and traced_path.get("has_sanitizer") and int(item.get("confidence", 0)) < 90:
+                continue
+
         normalized = dict(item)
-        line_sequence = [int(line) for line in normalized.get("path_line_sequence", []) if int(line) > 0]
+        # A code-review finding is anchored to the exact line the reviewer read.
+        # Do not replace it with a nearby tracer line merely because a different
+        # taint candidate happens to have a sink in the same function.
+        line_sequence = (
+            [int(line) for line in normalized.get("path_line_sequence", []) if int(line) > 0]
+            if is_taint_finding
+            else []
+        )
         if line_sequence:
             line_start = min(line_sequence)
             line_end = max(line_sequence)
@@ -1902,10 +2038,102 @@ def filter_validated_findings(
     return filtered
 
 
+def _title_tokens(item: dict) -> set[str]:
+    text = str(item.get("title", "")).lower()
+    tokens: set[str] = set()
+    for raw in re.split(r"[^a-z0-9_]+", text):
+        token = raw.strip()
+        if len(token) < 3 or token in _TITLE_STOPWORDS:
+            continue
+        tokens.add(token)
+    return tokens
+
+
+def _ranges_overlap(item: dict, other: dict) -> bool:
+    if str(item.get("file", "")).strip() != str(other.get("file", "")).strip():
+        return False
+    start = int(item.get("line", 1))
+    end = max(start, int(item.get("line_end", start)))
+    other_start = int(other.get("line", 1))
+    other_end = max(other_start, int(other.get("line_end", other_start)))
+    return start <= other_end and other_start <= end
+
+
+def _titles_describe_same_defect(item: dict, other: dict) -> bool:
+    """Cheap guard against merging two different defects that happen to overlap.
+
+    Deduping two findings into one hides a defect, which is worse than showing
+    it twice, so this only fires when the titles also talk about the same thing.
+    """
+    tokens = _title_tokens(item)
+    other_tokens = _title_tokens(other)
+    if not tokens or not other_tokens:
+        return False
+    shared = len(tokens & other_tokens)
+    if shared >= 2:
+        return True
+    return shared / len(tokens | other_tokens) >= 0.34
+
+
+def _carry_taint_context(winner: dict, loser: dict) -> dict:
+    """Keep the source/sink/path detail when one lane had it and the other did not."""
+    merged = dict(winner)
+    for key in ("source_hint", "sink_hint", "path_hint"):
+        if not str(merged.get(key, "")).strip() and str(loser.get(key, "")).strip():
+            merged[key] = str(loser[key]).strip()
+    return merged
+
+
+def merge_review_lanes(security_findings: list[dict], review_findings: list[dict]) -> list[dict]:
+    """Merge the taint lane and the code review lane into one list.
+
+    Both lanes read the same code, so the same defect often comes back twice with
+    different wording. A finding is treated as a restatement only when it sits on
+    overlapping lines in the same file *and* the two titles describe the same
+    thing. When they do, the higher-confidence version wins and the taint detail
+    from the other is carried over.
+    """
+    merged: list[dict] = []
+    for item in [*review_findings, *security_findings]:
+        duplicate_index = next(
+            (
+                index
+                for index, existing in enumerate(merged)
+                if _ranges_overlap(item, existing) and _titles_describe_same_defect(item, existing)
+            ),
+            None,
+        )
+        if duplicate_index is None:
+            merged.append(item)
+            continue
+        existing = merged[duplicate_index]
+        if int(item.get("confidence", 0)) > int(existing.get("confidence", 0)):
+            merged[duplicate_index] = _carry_taint_context(item, existing)
+        else:
+            merged[duplicate_index] = _carry_taint_context(existing, item)
+    return merged
+
+
+def _finding_recommendation(item: dict) -> str:
+    """The concrete fix, whether the lane supplied a recommendation or a fix list."""
+    recommendation = str(item.get("recommendation", "")).strip()
+    if recommendation:
+        return recommendation
+    for suggestion in item.get("fix_suggestions", []) or []:
+        if isinstance(suggestion, dict) and str(suggestion.get("description", "")).strip():
+            return str(suggestion["description"]).strip()
+    return ""
+
+
 def build_annotations(findings: list[dict]) -> list[dict]:
     annotations: list[dict] = []
     for item in findings:
         severity = normalize_severity(str(item.get("severity", "medium")))
+        # A review finding has no taint path. Fall back to the claim so the inline
+        # marker reads "file:12-13 - user input is concatenated into the query"
+        # instead of a placeholder.
+        path_hint = str(item.get("path_hint", "")).strip()
+        claim = str(item.get("summary", "")).strip()
         annotations.append(
             {
                 "file": str(item.get("file", "")),
@@ -1916,7 +2144,9 @@ def build_annotations(findings: list[dict]) -> list[dict]:
                 "title": str(item.get("title", "Security finding")),
                 "confidence": max(0, min(100, int(item.get("confidence", 70)))),
                 "evidence": str(item.get("evidence", "")),
-                "pathHint": str(item.get("path_hint", "")),
+                "claim": claim,
+                "recommendation": _finding_recommendation(item),
+                "pathHint": path_hint or claim[:180],
             }
         )
     return annotations
@@ -1956,18 +2186,14 @@ def build_candidate_review_findings(
         if path is None:
             continue
 
-        source_hint = str(item.get("source_hint", "")).strip()
-        sink_hint = str(item.get("sink_hint", "")).strip()
-        path_hint = str(item.get("path_hint", "")).strip()
-        if not source_hint or not sink_hint or not path_hint:
-            continue
-
         line_sequence = [int(line) for line in item.get("path_line_sequence", []) if int(line) > 0]
         if line_sequence:
             evidence = extract_evidence(path, min(line_sequence), max(line_sequence), radius=1)
         else:
             line_number = max(1, int(item.get("line", 1)))
             evidence = extract_evidence(path, line_number, int(item.get("line_end", line_number)))
+        if not evidence["snippet"]:
+            continue
 
         confidence = max(35, min(79, int(item.get("confidence", 55))))
         candidate_review_items.append(

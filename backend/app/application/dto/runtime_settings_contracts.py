@@ -48,7 +48,7 @@ class ProviderInfo(BaseModel):
 
 class ProviderTestRequest(BaseModel):
     provider: str = Field(description="Provider id")
-    api_key: str = Field(description="API key to test")
+    api_key: str | None = Field(default=None, description="API key to test — if empty, server will try stored key for same provider")
     base_url: str | None = Field(default=None, description="Custom base URL")
     model: str | None = Field(default=None, description="Model to test with")
 

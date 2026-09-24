@@ -9,6 +9,8 @@ export interface SessionAnnotation {
   title: string;
   confidence: number;
   evidence: string;
+  claim?: string;
+  recommendation?: string;
   pathHint: string;
 }
 

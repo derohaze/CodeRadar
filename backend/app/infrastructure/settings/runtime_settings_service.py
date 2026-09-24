@@ -38,11 +38,14 @@ class RuntimeSettingsService:
             return parsed
 
     async def update(self, updates: dict[str, Any]) -> RuntimeSettingsResponse:
-        payload = {
-            key: value
-            for key, value in updates.items()
-            if value is not None
-        }
+        # Keep explicit None for ai_* to allow disconnect/clear
+        ai_clear_keys = {"ai_provider", "ai_model", "ai_base_url", "ai_api_key"}
+        payload = {}
+        for key, value in updates.items():
+            if value is not None:
+                payload[key] = value
+            elif key in ai_clear_keys:
+                payload[key] = None
         if not payload:
             return await self.get()
 

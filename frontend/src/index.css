@@ -58,8 +58,8 @@
     --status-success-bg: 150 28% 15%;
     --status-critical: 358 62% 62%;
     --status-critical-bg: 358 50% 15%;
-    --status-high: 32 35% 52%;
-    --status-high-bg: 32 30% 15%;
+    --status-high: 38 78% 60%;
+    --status-high-bg: 38 45% 16%;
     --status-progress: 210 45% 62%;
     --status-disabled: 0 0% 42%;
   }
@@ -116,8 +116,8 @@
     --status-success-bg: 150 45% 94%;
     --status-critical: 358 65% 52%;
     --status-critical-bg: 358 70% 95%;
-    --status-high: 32 60% 42%;
-    --status-high-bg: 32 70% 94%;
+    --status-high: 38 70% 36%;
+    --status-high-bg: 38 80% 93%;
     --status-progress: 210 60% 46%;
     --status-disabled: 0 0% 55%;
   }
@@ -173,27 +173,14 @@
     font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   }
   .dotted-bg {
-    background-image: radial-gradient(circle, hsl(var(--surface-dot)) 1px, transparent 1px);
-    background-size: 20px 20px;
+    background-color: hsl(var(--surface));
   }
   .scan-grid {
     position: relative;
-    background-image:
-      radial-gradient(circle, hsl(var(--surface-dot) / 0.95) 1px, transparent 1px),
-      linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(245, 245, 245, 0.86));
-    background-size: 20px 20px, 100% 100%;
-    animation: grid-drift 18s linear infinite;
+    background-color: hsl(var(--surface));
   }
   .scan-grid::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(circle at 20% 20%, rgba(0, 0, 0, 0.035), transparent 28%),
-      radial-gradient(circle at 80% 25%, rgba(0, 0, 0, 0.03), transparent 24%),
-      radial-gradient(circle at 50% 80%, rgba(0, 0, 0, 0.025), transparent 24%);
-    animation: grid-pulse 5s ease-in-out infinite;
-    pointer-events: none;
+    content: none;
   }
   .hide-scrollbar {
     -ms-overflow-style: none;
@@ -220,53 +207,54 @@ the many feature files that use arbitrary-value colors. */
   .bg-\[\#f7f7f7\] { background-color: hsl(0 0% 22%); }
   .bg-\[\#f4f4f5\] { background-color: hsl(0 0% 20%); }
   .bg-\[\#eeeeee\] { background-color: hsl(0 0% 24%); }
+  .bg-\[\#f0f0f0\] { background-color: hsl(0 0% 25%); }
   .bg-\[\#f2f2f2\] { background-color: hsl(0 0% 23%); }
   .bg-\[\#e5e5e5\] { background-color: hsl(0 0% 26%); }
   .bg-\[\#d4d4d4\] { background-color: hsl(0 0% 30%); }
 
-  /* warm creams -> warm dark neutrals */
-  .bg-\[\#ebe3d5\] { background-color: hsl(36 18% 18%); }
-  .bg-\[\#f6efe6\] { background-color: hsl(36 22% 16%); }
-  .bg-\[\#eee3d5\] { background-color: hsl(36 20% 20%); }
-  .bg-\[\#f7f3eb\] { background-color: hsl(36 16% 15%); }
-  .bg-\[\#f7f2eb\] { background-color: hsl(36 16% 15%); }
-  .bg-\[\#fcf8f2\] { background-color: hsl(36 14% 18%); }
-  .bg-\[\#f8f2e9\] { background-color: hsl(36 20% 17%); }
-  .bg-\[\#f4ede4\] { background-color: hsl(36 14% 19%); }
-  .bg-\[\#f4efe6\] { background-color: hsl(36 14% 19%); }
-  .bg-\[\#efe8de\] { background-color: hsl(36 14% 18%); }
-  .bg-\[\#ece3d6\] { background-color: hsl(36 14% 18%); }
-  .bg-\[\#ebe6d8\] { background-color: hsl(36 14% 17%); }
-  .bg-\[\#f3ede3\] { background-color: hsl(36 16% 18%); }
-  .bg-\[\#ddd2c2\] { background-color: hsl(36 12% 22%); }
+  /* warm creams -> neutral dark surfaces (no brown) */
+  .bg-\[\#ebe3d5\] { background-color: hsl(0 0% 18%); }
+  .bg-\[\#f6efe6\] { background-color: hsl(0 0% 20%); }
+  .bg-\[\#eee3d5\] { background-color: hsl(0 0% 20%); }
+  .bg-\[\#f7f3eb\] { background-color: hsl(0 0% 19%); }
+  .bg-\[\#f7f2eb\] { background-color: hsl(0 0% 19%); }
+  .bg-\[\#fcf8f2\] { background-color: hsl(0 0% 20%); }
+  .bg-\[\#f8f2e9\] { background-color: hsl(0 0% 20%); }
+  .bg-\[\#f4ede4\] { background-color: hsl(0 0% 20%); }
+  .bg-\[\#f4efe6\] { background-color: hsl(0 0% 20%); }
+  .bg-\[\#efe8de\] { background-color: hsl(0 0% 19%); }
+  .bg-\[\#ece3d6\] { background-color: hsl(0 0% 20%); }
+  .bg-\[\#ebe6d8\] { background-color: hsl(0 0% 19%); }
+  .bg-\[\#f3ede3\] { background-color: hsl(0 0% 20%); }
+  .bg-\[\#ddd2c2\] { background-color: hsl(0 0% 22%); }
 
   /* green tint -> dark green */
   .bg-\[\#f6fbf4\] { background-color: hsl(120 20% 16%); }
   .bg-\[\#f7fbf7\] { background-color: hsl(120 20% 16%); }
 
-  /* red/error tint -> dark red */
-  .bg-\[\#fff7f5\] { background-color: hsl(8 45% 17%); }
-  .bg-\[\#fff6f4\] { background-color: hsl(8 45% 16%); }
-  .bg-\[\#fff1ee\] { background-color: hsl(8 45% 17%); }
-  .bg-\[\#fff1ec\] { background-color: hsl(8 45% 17%); }
-  .bg-\[\#fff8f6\] { background-color: hsl(8 45% 17%); }
-  .bg-\[\#faece8\] { background-color: hsl(8 40% 19%); }
-  .bg-\[\#fde5df\] { background-color: hsl(8 45% 20%); }
+  /* error tint -> deep neutral red (not brown) */
+  .bg-\[\#fff7f5\] { background-color: hsl(358 30% 14%); }
+  .bg-\[\#fff6f4\] { background-color: hsl(358 30% 13%); }
+  .bg-\[\#fff1ee\] { background-color: hsl(358 30% 14%); }
+  .bg-\[\#fff1ec\] { background-color: hsl(358 30% 14%); }
+  .bg-\[\#fff8f6\] { background-color: hsl(358 30% 14%); }
+  .bg-\[\#faece8\] { background-color: hsl(358 26% 16%); }
+  .bg-\[\#fde5df\] { background-color: hsl(358 30% 16%); }
 
-  /* amber tint -> dark amber */
-  .bg-\[\#fff9f6\] { background-color: hsl(32 40% 16%); }
-  .bg-\[\#fff6ef\] { background-color: hsl(32 40% 16%); }
-  .bg-\[\#fbf6e8\] { background-color: hsl(40 45% 16%); }
+  /* amber tint -> neutral dark (no brown) */
+  .bg-\[\#fff9f6\] { background-color: hsl(0 0% 19%); }
+  .bg-\[\#fff6ef\] { background-color: hsl(0 0% 19%); }
+  .bg-\[\#fbf6e8\] { background-color: hsl(0 0% 18%); }
 
-  /* light text grays -> readable on dark */
+  /* light text grays -> readable neutral on dark */
   .text-\[\#525252\] { color: hsl(0 0% 78%); }
   .text-\[\#666666\] { color: hsl(0 0% 74%); }
-  .text-\[\#8a8276\] { color: hsl(36 10% 66%); }
-  .text-\[\#9a9184\] { color: hsl(36 9% 68%); }
-  .text-\[\#6d655c\] { color: hsl(32 8% 68%); }
-  .text-\[\#f6efe6\] { color: hsl(36 22% 82%); }
-  .text-\[\#e8dccd\] { color: hsl(36 16% 80%); }
-  .text-\[\#cbb8a5\] { color: hsl(36 14% 74%); }
+  .text-\[\#8a8276\] { color: hsl(0 0% 66%); }
+  .text-\[\#9a9184\] { color: hsl(0 0% 68%); }
+  .text-\[\#6d655c\] { color: hsl(0 0% 68%); }
+  .text-\[\#f6efe6\] { color: hsl(0 0% 82%); }
+  .text-\[\#e8dccd\] { color: hsl(0 0% 80%); }
+  .text-\[\#cbb8a5\] { color: hsl(0 0% 74%); }
 
   /* warm accent text -> brighter on dark */
   .text-\[\#9f5c53\] { color: hsl(6 45% 72%); }
@@ -285,7 +273,7 @@ the many feature files that use arbitrary-value colors. */
 
   /* borders -> dark */
   .border-\[\#d4d4d4\] { border-color: hsl(0 0% 28%); }
-  .border-\[\#ddd1bf\] { border-color: hsl(36 12% 22%); }
+  .border-\[\#ddd1bf\] { border-color: hsl(0 0% 24%); }
 }
 
 /* Light-mode remap — the inverse of the dark remap above.

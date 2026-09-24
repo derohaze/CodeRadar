@@ -13,7 +13,6 @@ from app.core.config import get_settings
 
 
 BACKEND_ROOT = Path(__file__).resolve().parent
-NODE_IO_ROOT = BACKEND_ROOT / "node"
 RUST_INDEXER_ROOT = BACKEND_ROOT / "rust-indexer"
 RUST_INDEXER_BINARY_NAME = "codeguard-rust-indexer.exe" if os.name == "nt" else "codeguard-rust-indexer"
 RESET = "\033[0m"
@@ -145,38 +144,6 @@ def _loopback_host(host: str) -> str:
     return host
 
 
-def _find_pnpm() -> str:
-    executable = shutil.which("pnpm.cmd" if os.name == "nt" else "pnpm")
-    if executable is None:
-        raise RuntimeError("pnpm is required to run the backend Node I/O service.")
-    return executable
-
-
-def _ensure_node_io_dependencies(pnpm: str) -> None:
-    if (NODE_IO_ROOT / "node_modules").exists():
-        return
-    subprocess.run([pnpm, "install"], cwd=NODE_IO_ROOT, check=True)
-
-
-def _start_node_io() -> subprocess.Popen | None:
-    settings = get_settings()
-    try:
-        pnpm = _find_pnpm()
-        _ensure_node_io_dependencies(pnpm)
-    except RuntimeError as exc:
-        print(f"{GREEN}[backend-main]{RESET} {MAGENTA}node-io{RESET}=unavailable ({exc})", flush=True)
-        return None
-
-    env = os.environ.copy()
-    env.setdefault("NODE_IO_HOST", settings.node_io_host)
-    env.setdefault("NODE_IO_PORT", str(settings.node_io_port))
-    return subprocess.Popen(
-        [pnpm, "--silent", "io:dev"],
-        cwd=NODE_IO_ROOT,
-        env=env,
-    )
-
-
 def _stop_process(process: subprocess.Popen | None) -> None:
     if process is None or process.poll() is not None:
         return
@@ -259,7 +226,6 @@ def _start_rust_indexer() -> subprocess.Popen | None:
 if __name__ == "__main__":
     settings = get_settings()
     worker_process = _start_embedded_worker()
-    node_process = _start_node_io()
     rust_process = _start_rust_indexer()
     reload_enabled = _should_enable_reload()
     rust_status = (
@@ -271,7 +237,6 @@ if __name__ == "__main__":
         print(
             f"{GREEN}[backend-main]{RESET} starting services | "
             f"{CYAN}python-api{RESET}=http://{_loopback_host(settings.app_host)}:{settings.app_port} | "
-            f"{MAGENTA}node-io{RESET}=http://{settings.node_io_host}:{settings.node_io_port} | "
             f"{rust_status}",
             flush=True,
         )
@@ -296,6 +261,5 @@ if __name__ == "__main__":
                 log_config=UVICORN_LOG_CONFIG,
             )
     finally:
-        _stop_process(node_process)
         _stop_process(rust_process)
         _stop_embedded_worker(worker_process)

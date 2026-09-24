@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
 import { Description, Label } from "@/components/ui/field";
 import {
   ProgressBar,
@@ -13,11 +12,16 @@ import { Loader } from "@/shared/ui/Loader";
 
 interface ScanProgressScreenProps {
   session: ScanSessionDetail | null;
+  onStop?: () => void;
 }
 
-export function ScanProgressScreen({ session }: ScanProgressScreenProps) {
+export function ScanProgressScreen({ session, onStop }: ScanProgressScreenProps) {
   const isFailed = session?.session.status === "failed";
   const isActive = session?.session.status === "queued" || session?.session.status === "scanning";
+  const isFile = session?.session.targetType === "file";
+  const scopeLabel = isFile ? "file" : "codebase";
+  const reviewKindLabel = isFile ? `Reviewing ${session?.session.repo ?? "file"}` : "Reviewing your codebase";
+  const subLabel = isFile ? "Inspecting selected file and its immediate context" : "Inspecting repository structure, data flow, and active review signals";
   const currentLine = toAnalystCopy(session?.session.progressMessage ?? "Waiting for review updates...");
   const [revealedLineCount, setRevealedLineCount] = useState(0);
   const [activeLineCharCount, setActiveLineCharCount] = useState(0);
@@ -44,6 +48,7 @@ export function ScanProgressScreen({ session }: ScanProgressScreenProps) {
     stickToBottomRef.current = true;
   }, [session?.session.id]);
 
+  const isCompleted = session?.session.status === "completed" || session?.session.status === "failed";
   const stageLines = useMemo(() => {
     if (!session) {
       return ["Waiting for review to start..."];
@@ -53,6 +58,11 @@ export function ScanProgressScreen({ session }: ScanProgressScreenProps) {
   }, [currentLine, session]);
 
   useEffect(() => {
+    if (isCompleted) {
+      setRevealedLineCount(stageLines.length - 1);
+      setActiveLineCharCount(stageLines[stageLines.length - 1]?.length ?? 0);
+      return;
+    }
     if (stageLines.length === 0) return;
 
     if (revealedLineCount > stageLines.length - 1) {
@@ -82,12 +92,13 @@ export function ScanProgressScreen({ session }: ScanProgressScreenProps) {
     }, activeLineCharCount < activeLine.length ? 18 : 140);
 
     return () => window.clearTimeout(timeout);
-  }, [activeLineCharCount, revealedLineCount, stageLines]);
+  }, [activeLineCharCount, isCompleted, revealedLineCount, stageLines]);
 
   const visibleStageLines = useMemo(() => {
     if (stageLines.length === 0) {
       return [];
     }
+    if (isCompleted) return stageLines;
 
     return stageLines
       .map((line, index) => {
@@ -102,7 +113,7 @@ export function ScanProgressScreen({ session }: ScanProgressScreenProps) {
         return "";
       })
       .filter(Boolean);
-  }, [activeLineCharCount, revealedLineCount, stageLines]);
+  }, [activeLineCharCount, isCompleted, revealedLineCount, stageLines]);
 
   useEffect(() => {
     const container = logContainerRef.current;
@@ -131,30 +142,30 @@ export function ScanProgressScreen({ session }: ScanProgressScreenProps) {
   }, [visibleStageLines.length, activeLineCharCount, revealedLineCount]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.16, ease: "linear" }}          className="hide-scrollbar flex min-h-0 flex-1 items-start justify-center overflow-y-auto bg-surface px-6 py-10 pb-16"
+    <div
+      className="hide-scrollbar flex min-h-0 flex-1 items-start justify-center overflow-y-auto bg-surface px-6 py-10 pb-16"
     >
       <div className="mx-auto flex w-full max-w-[860px] flex-col items-center">
         <p className="text-center text-[13px] font-medium uppercase tracking-[0.16em] text-txt-tertiary">
-          {isFailed ? "Review failed" : "Live code review"}
+          {isFailed ? "Review failed" : `Live ${scopeLabel} review`}
         </p>
         <h2 className="mt-2 text-center text-[28px] font-semibold tracking-[-0.03em] text-txt-primary">
-          {isFailed ? "The review could not be completed" : "Reviewing your codebase for security issues"}
+          {isFailed ? "The review could not be completed" : `${reviewKindLabel} for issues`}
         </h2>
 
         <p className="mt-3 max-w-[560px] text-center text-[14px] leading-7 text-txt-secondary">
-          {isFailed ? "Open Settings → Providers to verify the model and API key, then run the review again" : "Inspecting repository structure, data flow, and active review signals"}
+          {isFailed ? "Open Settings → Providers to verify the model and API key, then run the review again" : subLabel}
         </p>
+        {isActive && onStop && (
+          <button onClick={onStop} className="mt-4 rounded-full border border-txt-tertiary/20 px-5 py-2 text-[12px] font-medium text-txt-secondary hover:bg-muted/50">Stop review</button>
+        )}
 
         <div className="mt-10 w-full">
           <ProgressBar value={animatedMetrics.actualProgress}>
             <ProgressBarHeader>
               <Label className="inline-flex items-center gap-2">
                 {!isFailed && isActive && <Loader variant="spin" className="size-3.5 text-txt-primary" />}
-                {isFailed ? "Code review failed" : "Codebase review in progress"}
+                {isFailed ? "Code review failed" : `${scopeLabel} review in progress`}
               </Label>
               <ProgressBarValue />
             </ProgressBarHeader>
@@ -176,10 +187,9 @@ export function ScanProgressScreen({ session }: ScanProgressScreenProps) {
               </p>
             </div>
             <div className="mt-3 h-2 overflow-hidden rounded-md bg-[#e5e5e5]">
-              <motion.div
+              <div
                 className="h-full rounded-md bg-primary"
-                animate={{ width: `${animatedMetrics.phaseProgress}%` }}
-                transition={{ duration: 0.25, ease: "easeOut" }}
+                style={{ width: `${animatedMetrics.phaseProgress}%` }}
               />
             </div>
             <p className="mt-3 text-xs leading-5 text-txt-secondary">
@@ -189,7 +199,7 @@ export function ScanProgressScreen({ session }: ScanProgressScreenProps) {
         )}
 
         {session && (
-          <div className="mt-4 grid w-full gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className={`mt-4 grid w-full gap-2.5 ${session.session.targetType === "file" ? "sm:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-4"}`}>
             <ProgressInfoCard
               label="Mode and phase"
               value={session.session.scanMode === "deep" ? "Deep review" : "Fast review"}
@@ -200,16 +210,20 @@ export function ScanProgressScreen({ session }: ScanProgressScreenProps) {
               value={coverageDisplay.value}
               note={coverageDisplay.note}
             />
-            <ProgressInfoCard
-              label="Path review"
-              value={pathDisplay.value}
-              note={pathDisplay.note}
-            />
-            <ProgressInfoCard
-              label="Live inventory"
-              value={phaseSnapshot.value}
-              note={phaseSnapshot.note}
-            />
+            {session.session.targetType !== "file" && (
+              <>
+                <ProgressInfoCard
+                  label="Path review"
+                  value={pathDisplay.value}
+                  note={pathDisplay.note}
+                />
+                <ProgressInfoCard
+                  label="Live inventory"
+                  value={phaseSnapshot.value}
+                  note={phaseSnapshot.note}
+                />
+              </>
+            )}
           </div>
         )}
 
@@ -245,7 +259,7 @@ export function ScanProgressScreen({ session }: ScanProgressScreenProps) {
           </div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 

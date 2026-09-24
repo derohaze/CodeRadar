@@ -27,6 +27,37 @@ ALLOWED_FIX_TYPES = {"full_fix", "partial_mitigation", "temporary_guard", "risky
 ALLOWED_SECURITY_STRENGTH = {"high", "medium", "low"}
 ALLOWED_REGRESSION_RISK = {"low", "medium", "high"}
 
+# Code review lane (review-skills debate methodology): axes, statuses, severity.
+ALLOWED_REVIEW_AXES = frozenset(
+    {
+        "correctness",
+        "security",
+        "error-handling",
+        "concurrency",
+        "api-contract",
+        "performance",
+        "resource",
+        "standards",
+        "tests",
+        "docs",
+    }
+)
+ALLOWED_REVIEW_STATUSES = frozenset({"agreed", "contested", "withdrawn"})
+ALLOWED_REVIEW_SEVERITIES = frozenset({"critical", "high", "medium", "low"})
+TASK_PROMPT_LIMITS.update(
+    {
+        ("code_review", "repository_profile"): {"list_limit": 6, "string_limit": 160},
+        ("code_review", "repository_map"): {"list_limit": 6, "string_limit": 160},
+        # The reviewer needs the real code in the window. Snippets must not be
+        # clamped to a 260-char stub or the model approves code it never saw.
+        ("code_review", "work_items"): {"list_limit": 12, "string_limit": 2400},
+        ("review_challenge", "findings"): {"list_limit": 14, "string_limit": 600},
+        ("review_challenge", "work_items"): {"list_limit": 12, "string_limit": 2000},
+        ("review_arbitrate", "findings"): {"list_limit": 14, "string_limit": 600},
+        ("review_arbitrate", "debate"): {"list_limit": 14, "string_limit": 260},
+    }
+)
+
 
 def json_for_prompt(value, *, max_chars: int) -> str:
     compact = value
@@ -176,6 +207,167 @@ def normalize_finding(item: dict) -> dict:
             if isinstance(suggestion, dict)
         ],
     }
+
+
+def _coerce_confidence(value: object, *, default: int = 70) -> int:
+    """Accept 0-100 or the 0.0-1.0 scale the debate prompts document."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed <= 1.0 and parsed > 0.0:
+        parsed *= 100.0
+    return max(0, min(100, int(round(parsed))))
+
+
+def _coerce_line(value: object, *, fallback: int = 1) -> int:
+    try:
+        line = int(value or 0)
+    except (TypeError, ValueError):
+        return fallback
+    return max(1, line)
+
+
+def _clean_text(value: object, *, width: int | None = None) -> str:
+    text = str(value or "").strip()
+    if width and len(text) > width:
+        return shorten(text, width=width, placeholder="...")
+    return text
+
+
+def normalize_review_finding(item: dict, *, default_id: str = "") -> dict:
+    """Normalize one debate-lane finding into CodeGuard's internal finding shape.
+
+    The debate lane reviews the whole surface, not only taint paths, so
+    source/sink/path hints stay optional. A defect with no untrusted input (an
+    off-by-one, a mutable default, a leaked handle) is still a defect.
+    """
+    if not isinstance(item, dict):
+        item = {}
+
+    severity = str(item.get("severity", "medium")).strip().lower()
+    if severity not in ALLOWED_REVIEW_SEVERITIES:
+        severity = "medium"
+
+    axis = str(item.get("axis", "")).strip().lower()
+    if axis not in ALLOWED_REVIEW_AXES:
+        axis = "correctness"
+
+    status = str(item.get("status", "")).strip().lower()
+    if status not in ALLOWED_REVIEW_STATUSES:
+        status = "agreed"
+
+    line = _coerce_line(item.get("line"))
+    line_end = max(line, _coerce_line(item.get("line_end"), fallback=line))
+
+    claim = _clean_text(item.get("claim"), width=280)
+    evidence = _clean_text(item.get("evidence"), width=520)
+    recommendation = _clean_text(item.get("recommendation"), width=420)
+    debate_note = _clean_text(item.get("debate_note"), width=280)
+
+    audit_log: list[str] = []
+    if status == "contested":
+        audit_log.append("Second pass challenged this finding; the main reviewer held it.")
+    elif status == "withdrawn":
+        audit_log.append("Withdrawn after the second pass: the challenge was accepted.")
+
+    return {
+        "review_id": _clean_text(item.get("id"), width=8) or default_id,
+        "review_status": status,
+        "review_axis": axis,
+        "debate_note": debate_note,
+        # --- CodeGuard finding shape, consumed by dict_findings_to_entities ---
+        "severity": severity,
+        "title": _clean_text(item.get("title"), width=180) or "Code review finding",
+        "file": _clean_text(item.get("file"), width=260),
+        "line": line,
+        "line_end": line_end,
+        "category": f"Code review - {axis}",
+        "confidence": _coerce_confidence(item.get("confidence")),
+        "summary": claim,
+        "impact": evidence,
+        "explanation": evidence,
+        "evidence": evidence,
+        "source_hint": _clean_text(item.get("source_hint"), width=120),
+        "sink_hint": _clean_text(item.get("sink_hint"), width=120),
+        "path_hint": _clean_text(item.get("path_hint"), width=220),
+        "attack_input": "",
+        "attack_execution": "",
+        "attack_result": "",
+        "audit_log": audit_log,
+        "fix_suggestions": (
+            [
+                {
+                    "id": "recommended",
+                    "label": "Recommended fix",
+                    "profile": "recommended",
+                    "description": recommendation or "Apply the fix described in the finding evidence.",
+                }
+            ]
+        ),
+        "recommendation": recommendation,
+    }
+
+
+def _review_finding_is_anchored(item: dict) -> bool:
+    """Anti-hallucination gate for the debate lane.
+
+    A finding must name a real file from the reviewed scope, a real line inside
+    it, and carry evidence or a concrete recommendation. Anything else is a
+    hallucination and never reaches the client.
+    """
+    if not str(item.get("file", "")).strip():
+        return False
+    if int(item.get("line", 0) or 0) <= 0:
+        return False
+    return bool(str(item.get("evidence", "")).strip() or str(item.get("recommendation", "")).strip())
+
+
+def extract_review_findings(parsed: dict, *, default_status: str = "agreed") -> list[dict]:
+    """Pull anchored findings out of any of the three debate-lane documents."""
+    if not isinstance(parsed, dict):
+        return []
+    findings = parsed.get("findings", [])
+    if not isinstance(findings, list):
+        return []
+    normalized: list[dict] = []
+    for index, item in enumerate(findings, start=1):
+        if not isinstance(item, dict):
+            continue
+        candidate = normalize_review_finding(item, default_id=f"F{index}")
+        if candidate["review_status"] not in ALLOWED_REVIEW_STATUSES:
+            candidate["review_status"] = default_status
+        if not _review_finding_is_anchored(candidate):
+            continue
+        normalized.append(candidate)
+    return normalized
+
+
+def normalize_debate_verdicts(parsed: dict) -> list[dict]:
+    if not isinstance(parsed, dict):
+        return []
+    verdicts = parsed.get("verdicts", [])
+    if not isinstance(verdicts, list):
+        return []
+    normalized: list[dict] = []
+    for item in verdicts:
+        if not isinstance(item, dict):
+            continue
+        verdict = str(item.get("verdict", "confirm")).strip().lower()
+        if verdict not in {"confirm", "refute", "downgrade"}:
+            verdict = "confirm"
+        severity = str(item.get("severity", "")).strip().lower()
+        normalized.append(
+            {
+                "id": _clean_text(item.get("id"), width=8),
+                "verdict": verdict,
+                "reason": _clean_text(item.get("reason"), width=280),
+                "evidence": _clean_text(item.get("evidence"), width=280),
+                "severity": severity if severity in ALLOWED_REVIEW_SEVERITIES else "",
+                "confidence": _coerce_confidence(item.get("confidence"), default=0),
+            }
+        )
+    return normalized
 
 
 def compact_findings(findings: list[dict], limit: int) -> list[dict]:
@@ -415,6 +607,22 @@ def _merge_unique_notes(base: list[str], extra: list[str]) -> list[str]:
     return merged
 
 
+def _evidence_looks_hallucinated(item: dict) -> bool:
+    """Drop findings with no grounding: Greptile-style anti-hallucination"""
+    file_path = str(item.get("file", "")).strip()
+    line = int(item.get("line", 0) or 0)
+    evidence = str(item.get("evidence", "")).strip()
+    title = str(item.get("title", "")).strip()
+    # Must have at least file + line + some evidence or path context
+    if not file_path or line <= 0:
+        return True
+    # Evidence should mention the file or contain non-empty snippet; empty evidence is hallucination-prone
+    has_grounding = bool(evidence) or bool(str(item.get("path_hint", "")).strip()) or bool(str(item.get("sink_hint", "")).strip())
+    if not has_grounding and len(title) < 8:
+        return True
+    return False
+
+
 def extract_review_payload(content: str) -> dict:
     parsed = extract_json(content)
     findings = parsed.get("findings", [])
@@ -423,7 +631,14 @@ def extract_review_payload(content: str) -> dict:
         for item in findings:
             if not isinstance(item, dict):
                 continue
-            normalized_findings.append(normalize_finding(item))
+            normalized = normalize_finding(item)
+            if _evidence_looks_hallucinated(normalized):
+                continue
+            confidence = int(normalized.get("confidence", 0) or 0)
+            # Drop low-confidence hallucinations unless they have strong source+sink grounding
+            if confidence < 55 and not (normalized.get("source_hint") and normalized.get("sink_hint")):
+                continue
+            normalized_findings.append(normalized)
 
     return {
         "review_note": shorten(str(parsed.get("review_note", "")), width=180, placeholder="..."),

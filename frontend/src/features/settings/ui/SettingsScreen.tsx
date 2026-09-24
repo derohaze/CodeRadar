@@ -294,25 +294,22 @@ function ProvidersTab({ settings, onPatchSettings, onBack }: { settings: Runtime
   const isCustom = selected === "custom";
 
   const handleTest = async () => {
-    if (!apiKey.trim() && !settings.aiHasKey) {
+    const trimmedKey = apiKey.trim();
+    const canUseStored = !trimmedKey && settings.aiHasKey && settings.aiProvider === selected;
+    if (!trimmedKey && !canUseStored) {
       toast.error("Please enter an API key first");
       return;
     }
-    const keyToTest = apiKey.trim() || "__stored__"; // Use stored key indicator — backend will use decrypted stored key if apiKey is empty? For now require explicit
-    if (keyToTest === "__stored__") {
-      toast.error("Please re-enter your API key to test");
-      return;
-    }
+    const keyToTest = trimmedKey || undefined;
     setTestState({ ok: null, message: "", loading: true });
     setModels([]);
     try {
-      const result = await testProvider({ provider: selected, apiKey: keyToTest, baseUrl: baseUrl || undefined, model: model || undefined });
+      const result = await testProvider({ provider: selected, apiKey: keyToTest as string, baseUrl: baseUrl || undefined, model: model || undefined });
       setTestState({ ok: result.ok, message: result.message, loading: false });
       if (result.ok) {
         toast.success(result.message);
-        // Auto-fetch models on success
         try {
-          const fetched = await listProviderModels({ provider: selected, apiKey: keyToTest, baseUrl: baseUrl || undefined });
+          const fetched = await listProviderModels({ provider: selected, apiKey: keyToTest as string, baseUrl: baseUrl || undefined });
           setModels(fetched);
           if (fetched.length > 0) toast.success(`Found ${fetched.length} models`);
         } catch {
@@ -329,13 +326,15 @@ function ProvidersTab({ settings, onPatchSettings, onBack }: { settings: Runtime
   };
 
   const handleFetchModels = async () => {
-    if (!apiKey.trim()) {
+    const trimmedKey = apiKey.trim();
+    const canUseStored = !trimmedKey && settings.aiHasKey && settings.aiProvider === selected;
+    if (!trimmedKey && !canUseStored) {
       toast.error("Please enter an API key first");
       return;
     }
     setTestState({ ok: null, message: "", loading: true });
     try {
-      const fetched = await listProviderModels({ provider: selected, apiKey: apiKey.trim(), baseUrl: baseUrl || undefined });
+      const fetched = await listProviderModels({ provider: selected, apiKey: trimmedKey || undefined as unknown as string, baseUrl: baseUrl || undefined });
       setModels(fetched);
       setTestState({ ok: true, message: `Found ${fetched.length} models`, loading: false });
       toast.success(`Found ${fetched.length} models`);
@@ -343,6 +342,22 @@ function ProvidersTab({ settings, onPatchSettings, onBack }: { settings: Runtime
       const msg = e instanceof Error ? e.message : "Failed to list models";
       setTestState({ ok: false, message: msg, loading: false });
       toast.error(msg);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setSaveLoading(true);
+    try {
+      await onPatchSettings({ aiProvider: null as unknown as string, aiModel: null as unknown as string, aiBaseUrl: null as unknown as string, aiApiKey: "" } as UpdateRuntimeSettingsPayload);
+      toast.success("Provider disconnected — you can now connect another one");
+      setApiKey("");
+      setModel("");
+      setBaseUrl("");
+      setModels([]);
+    } catch (e) {
+      toast.error(toAnalystCopy(e instanceof Error ? e.message : "Failed to disconnect"));
+    } finally {
+      setSaveLoading(false);
     }
   };
 
@@ -553,6 +568,11 @@ function ProvidersTab({ settings, onPatchSettings, onBack }: { settings: Runtime
               {saveLoading ? "Saving…" : "Save provider"}
             </button>
           </div>
+          {settings.aiHasKey && (
+            <button onClick={handleDisconnect} disabled={saveLoading} className="w-full rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-[12.5px] font-medium text-red-300 hover:bg-red-500/15 disabled:opacity-50">
+              Disconnect provider
+            </button>
+          )}
 
           <p className="text-[11px] leading-4 text-white/30">
             Test does a live call to <span className="text-white/50">{currentProvider?.defaultBaseUrl || baseUrl || "your URL"}</span> — no fake data, and the key is encrypted with Fernet before storage
