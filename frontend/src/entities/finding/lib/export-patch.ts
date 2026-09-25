@@ -26,7 +26,7 @@ export function buildPatchExportBundle({
   const strategyLabel = snapshot.strategyLabel ?? (snapshot.manualEdit ? "Manual edit" : "Unnamed strategy");
   const patchText = snapshot.diff.endsWith("\n") ? snapshot.diff : `${snapshot.diff}\n`;
   const summaryLines = [
-    "CodeGuard Export Summary",
+    "CodeRadar Export Summary",
     "",
     `Finding: ${finding.title}`,
     `Category: ${finding.category}`,

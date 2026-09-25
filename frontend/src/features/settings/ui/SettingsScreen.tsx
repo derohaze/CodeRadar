@@ -12,6 +12,7 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/sonner";
+import { ProviderBadge } from "@/components/core/provider-logo";
 import type { RuntimeSettings, UpdateRuntimeSettingsPayload } from "@/shared/api/security";
 import { listProviders, listProviderModels, testProvider } from "@/shared/api/security";
 import type { ProviderInfo } from "@/shared/api/security";
@@ -442,9 +443,7 @@ function ProvidersTab({ settings, onPatchSettings, onBack }: { settings: Runtime
                 active ? "bg-[#2a241e] border-l-2 border-l-[#c9a86a] pl-[10px]" : "hover:bg-white/[0.03]"
               }`}
             >
-              <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${active ? "bg-white/[0.08] text-white" : "bg-white/[0.06] text-white/50"}`}>
-                <span className="text-[9.5px] font-semibold tracking-wide">{p.name.slice(0, 2).toUpperCase()}</span>
-              </div>
+              <ProviderBadge providerId={p.id} providerName={p.name} active={active} />
               <p className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-white">{p.name}</p>
               <div className="flex shrink-0 items-center gap-2">
                 {isStoredActive && <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9.5px] font-medium text-emerald-400">Active</span>}
@@ -486,18 +485,18 @@ function ProvidersTab({ settings, onPatchSettings, onBack }: { settings: Runtime
             />
           </div>
 
-          <div>
-            <label className="text-[11px] font-medium tracking-wide text-white/60">
-              {isCustom ? "Base URL (required)" : "Base URL (optional)"}
-            </label>
-            <input
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder={currentProvider?.defaultBaseUrl || "https://api.example.com/v1"}
-              className="mt-1 w-full rounded-lg border border-white/10 bg-[#2a2a2a] px-2.5 py-1.5 text-[12px] text-white placeholder:text-white/30 focus:border-white/20 focus:outline-none"
-            />
-            {isCustom && <p className="mt-1 text-[11px] text-white/35">Custom OpenAI-compatible endpoint, e.g. https://your-proxy.com/v1</p>}
-          </div>
+          {isCustom && (
+            <div>
+              <label className="text-[11px] font-medium tracking-wide text-white/60">Base URL (required)</label>
+              <input
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder={currentProvider?.defaultBaseUrl || "https://api.example.com/v1"}
+                className="mt-1 w-full rounded-lg border border-white/10 bg-[#2a2a2a] px-2.5 py-1.5 text-[12px] text-white placeholder:text-white/30 focus:border-white/20 focus:outline-none"
+              />
+              <p className="mt-1 text-[11px] text-white/35">Custom OpenAI-compatible endpoint, e.g. https://your-proxy.com/v1</p>
+            </div>
+          )}
 
           <div>
             <label className="text-[11px] font-medium tracking-wide text-white/60">Model</label>

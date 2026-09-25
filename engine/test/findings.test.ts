@@ -61,7 +61,7 @@ describe("validateCandidate", () => {
     expect(outcome.finding.location.file).toBe("src/app.ts");
     expect(outcome.finding.location.line).toBe(2);
     expect(outcome.finding.location.lineEnd).toBe(2);
-    expect(outcome.finding.schema).toBe("codeguard.review.findings.v1");
+    expect(outcome.finding.schema).toBe("coderadar.review.findings.v1");
     expect(outcome.finding.suggestedPatch).toBeNull();
   });
 
@@ -295,7 +295,7 @@ describe("findingId", () => {
 function findingOf(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
   const base: ReviewFinding = {
     id: "f-00000001",
-    schema: "codeguard.review.findings.v1",
+    schema: "coderadar.review.findings.v1",
     severity: "high",
     axis: "correctness",
     title: "Loop bound is inclusive of the collection length",

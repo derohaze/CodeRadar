@@ -20,7 +20,7 @@ describe("node filesystem adapter", () => {
   });
 
   it("strips a UTF-8 BOM so line one is still line one", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "codeguard-fs-"));
+    const root = await mkdtemp(path.join(tmpdir(), "coderadar-fs-"));
     try {
       const file = path.join(root, "bom.ts");
       await writeFile(file, "\uFEFFexport const a = 1;\n");
@@ -65,7 +65,7 @@ describe("discoverRepository", () => {
   let root = "";
 
   beforeEach(async () => {
-    root = await mkdtemp(path.join(tmpdir(), "codeguard-discovery-"));
+    root = await mkdtemp(path.join(tmpdir(), "coderadar-discovery-"));
     await mkdir(path.join(root, "src"), { recursive: true });
     await mkdir(path.join(root, "node_modules", "pkg"), { recursive: true });
     await writeFile(path.join(root, "src", "app.ts"), "export const value = 1;\n");
@@ -132,7 +132,7 @@ describe("detectTooling", () => {
   let root = "";
 
   beforeEach(async () => {
-    root = await mkdtemp(path.join(tmpdir(), "codeguard-tooling-"));
+    root = await mkdtemp(path.join(tmpdir(), "coderadar-tooling-"));
   });
 
   afterEach(async () => {
@@ -276,7 +276,7 @@ describe("node git adapter", () => {
   });
 
   it("reports no repository for a directory outside any repository", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "codeguard-nogit-"));
+    const root = await mkdtemp(path.join(tmpdir(), "coderadar-nogit-"));
     try {
       const git = createNodeGit({ timeoutMs: 10_000 });
       expect(await git.detectRepository(root)).toBeNull();

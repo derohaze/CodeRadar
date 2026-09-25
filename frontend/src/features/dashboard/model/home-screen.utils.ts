@@ -7,7 +7,7 @@ export interface RecentSource {
   pickedAt: number;
 }
 
-export const RECENT_SOURCES_KEY = "codeguard.recent-sources";
+export const RECENT_SOURCES_KEY = "coderadar.recent-sources";
 export const MAX_RECENT_SOURCES = 8;
 
 export function basename(path: string) {

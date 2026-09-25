@@ -6,9 +6,9 @@ import {
   type UpdateRuntimeSettingsPayload,
 } from "@/shared/api/security";
 
-export const SIDEBAR_COLLAPSED_STORAGE_KEY = "codeguard.sidebar.collapsed";
+export const SIDEBAR_COLLAPSED_STORAGE_KEY = "coderadar.sidebar.collapsed";
 
-export const THEME_STORAGE_KEY = "codeguard.theme";
+export const THEME_STORAGE_KEY = "coderadar.theme";
 
 export const DEFAULT_RUNTIME_SETTINGS: RuntimeSettings = {
   defaultPreset: "balanced",
@@ -139,7 +139,7 @@ export function useRuntimeSettings() {
     } catch (error) {
       // For theme, don't revert — UI stays on chosen theme even if backend offline
       if ((patch as Record<string, unknown>).theme) {
-        console.warn("[CodeGuard] theme backend sync failed, keeping local theme", error);
+        console.warn("[CodeRadar] theme backend sync failed, keeping local theme", error);
         return optimistic;
       }
       settingsRef.current = previous;

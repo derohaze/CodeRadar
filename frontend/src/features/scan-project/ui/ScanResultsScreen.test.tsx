@@ -236,7 +236,7 @@ describe("ScanResultsScreen", () => {
 
     expect(screen.getByText("AI score explanation")).toBeInTheDocument();
     expect(screen.getByText("Potential risks")).toBeInTheDocument();
-    expect(screen.getByText("What CodeGuard could not verify")).toBeInTheDocument();
+    expect(screen.getByText("What CodeRadar could not verify")).toBeInTheDocument();
     expect(screen.getAllByText(/cross-file path evidence and runtime integration visibility were limited/i)).toHaveLength(1);
     expect(screen.getByText(/redis-backed cache boundaries were reviewed/i)).toBeInTheDocument();
     expect(screen.getByText(/probe malformed api input against monitor endpoints/i)).toBeInTheDocument();

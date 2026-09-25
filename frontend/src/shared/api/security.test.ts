@@ -11,7 +11,7 @@ describe("security API error handling", () => {
       ok: false,
       status: 503,
       json: vi.fn().mockResolvedValue({
-        detail: "CodeGuard could not complete remediation analysis because the AI runtime was temporarily unavailable. Retry shortly.",
+        detail: "CodeRadar could not complete remediation analysis because the AI runtime was temporarily unavailable. Retry shortly.",
       }),
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -23,7 +23,7 @@ describe("security API error handling", () => {
         findingId: "finding-1",
       }),
     ).rejects.toThrow(
-      "CodeGuard could not complete remediation analysis because the AI runtime was temporarily unavailable. Retry shortly.",
+      "CodeRadar could not complete remediation analysis because the AI runtime was temporarily unavailable. Retry shortly.",
     );
   });
 

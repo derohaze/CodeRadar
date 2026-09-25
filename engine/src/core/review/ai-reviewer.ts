@@ -226,11 +226,111 @@ export interface HttpAiReviewerOptions {
   model: string;
   timeoutMs?: number;
   maxOutputTokens?: number;
+  /** Aborts the in-flight request and stops any further attempts. */
+  signal?: AbortSignal;
+  /** Total attempts, including the first. Clamped to 1-6. */
+  maxAttempts?: number;
+  /** Base delay for exponential backoff between attempts. */
+  retryDelayMs?: number;
+  /** Called before a retry sleeps, so the UI can explain the wait. */
+  onRetry?: (info: RetryInfo) => void;
+}
+
+/** What a caller is told when an attempt is about to be repeated. */
+export interface RetryInfo {
+  /** The attempt that just failed, 1-based. */
+  attempt: number;
+  /** Provider status, or null when the request never completed. */
+  status: number | null;
+  delayMs: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 const MAX_ERROR_BODY_LENGTH = 400;
+const DEFAULT_MAX_ATTEMPTS = 3;
+const DEFAULT_RETRY_DELAY_MS = 1_000;
+const MAX_RETRY_DELAY_MS = 20_000;
+/**
+ * A `Retry-After` beyond this is treated as "this key is blocked", not as a
+ * wait to perform. Sleeping for a minute inside a review is worse for the user
+ * than failing over to the deterministic findings.
+ */
+const MAX_HONOURED_RETRY_AFTER_MS = 30_000;
+
+/** Statuses where repeating the same request can plausibly succeed. */
+const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529]);
+
+/**
+ * A failed attempt together with whether repeating it is worth doing.
+ *
+ * `retryable` is carried on the error rather than inferred at the call site:
+ * only the code that saw the response can tell a rate limit from a bad API key.
+ */
+class AttemptFailure extends AiReviewerError {
+  readonly retryable: boolean;
+  readonly retryAfterMs: number | null;
+
+  constructor(message: string, status: number | null, retryable: boolean, retryAfterMs: number | null = null) {
+    super(message, status);
+    this.name = "AttemptFailure";
+    this.retryable = retryable;
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+/** The provider's own backoff hint, bounded, or null when there is none. */
+function retryAfterMs(response: Response): number | null {
+  const header = response.headers.get("retry-after");
+  if (header === null) return null;
+
+  const seconds = Number.parseFloat(header.trim());
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+
+  const milliseconds = Math.round(seconds * 1_000);
+  return milliseconds > MAX_HONOURED_RETRY_AFTER_MS ? null : milliseconds;
+}
+
+function sleep(milliseconds: number, signal: AbortSignal): Promise<void> {
+  if (milliseconds <= 0) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+
+    function onAbort(): void {
+      clearTimeout(timer);
+      reject(new AiReviewerError("provider request was cancelled"));
+    }
+
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * One attempt's abort signal: the caller's cancellation and the timeout, merged.
+ *
+ * The listener is removed by `dispose` because a long review makes many calls,
+ * and listeners left on a caller-owned signal accumulate for the whole run.
+ */
+function linkAbort(external: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onExternalAbort = (): void => controller.abort();
+
+  external?.addEventListener("abort", onExternalAbort);
+
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      clearTimeout(timer);
+      external?.removeEventListener("abort", onExternalAbort);
+    },
+  };
+}
 
 /**
  * A chat-completions reviewer.
@@ -238,6 +338,11 @@ const MAX_ERROR_BODY_LENGTH = 400;
  * Low temperature is not a stylistic choice: reviewing the same file twice and
  * getting different findings makes the output untrustworthy, and determinism is
  * what lets fixtures assert on results.
+ *
+ * Retries exist because a provider that is briefly rate limiting is not a
+ * review outcome. Only statuses that can plausibly succeed on a repeat are
+ * retried, the provider's own `Retry-After` wins over the computed backoff, and
+ * a cancellation always beats a pending retry.
  */
 export function createHttpAiReviewer(options: HttpAiReviewerOptions): AiReviewerPort {
   const parsed = new URL(options.endpoint);
@@ -251,46 +356,86 @@ export function createHttpAiReviewer(options: HttpAiReviewerOptions): AiReviewer
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxOutputTokens = options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+  const maxAttempts = Math.min(6, Math.max(1, options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS));
+  const retryDelayMs = Math.max(0, options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS);
+
+  async function attempt(request: AiReviewRequest): Promise<unknown> {
+    const link = linkAbort(options.signal, timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(parsed, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${options.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: options.model,
+          messages: [
+            { role: "system", content: request.systemPrompt },
+            { role: "user", content: request.userPrompt },
+          ],
+          temperature: 0.1,
+          max_tokens: maxOutputTokens,
+          response_format: { type: "json_object" },
+        }),
+        signal: link.signal,
+      });
+    } catch (error) {
+      // A cancelled run is not a provider problem, and the caller must be able
+      // to tell the two apart: one aborts the review, the other degrades it.
+      if (options.signal?.aborted === true) throw new AiReviewerError("provider request was cancelled");
+
+      const detail = error instanceof Error ? error.name : "unknown error";
+      throw new AttemptFailure(`provider request failed: ${detail}`, null, true);
+    } finally {
+      link.dispose();
+    }
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      const safeBody = redactSecrets(body, [options.apiKey]).replace(/\s+/g, " ").slice(0, MAX_ERROR_BODY_LENGTH);
+      const status = response.status;
+      throw new AttemptFailure(
+        `provider returned ${status}: ${safeBody}`,
+        status,
+        RETRYABLE_STATUSES.has(status),
+        retryAfterMs(response),
+      );
+    }
+
+    try {
+      return await response.json();
+    } catch {
+      throw new AiReviewerError("provider response was not valid JSON");
+    }
+  }
 
   return {
     name: `http:${parsed.host}`,
     async review(request: AiReviewRequest): Promise<unknown> {
-      let response: Response;
-      try {
-        response = await fetch(parsed, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${options.apiKey}`,
-          },
-          body: JSON.stringify({
-            model: options.model,
-            messages: [
-              { role: "system", content: request.systemPrompt },
-              { role: "user", content: request.userPrompt },
-            ],
-            temperature: 0.1,
-            max_tokens: maxOutputTokens,
-            response_format: { type: "json_object" },
-          }),
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-      } catch (error) {
-        const detail = error instanceof Error ? error.name : "unknown error";
-        throw new AiReviewerError(`provider request failed: ${detail}`);
+      let lastFailure: AttemptFailure | null = null;
+
+      for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber += 1) {
+        if (options.signal?.aborted === true) throw new AiReviewerError("provider request was cancelled");
+
+        try {
+          return await attempt(request);
+        } catch (error) {
+          // Anything that is not a marked attempt failure is a decision, not a
+          // transport hiccup: an unparseable body and a cancellation both pass
+          // straight through.
+          if (!(error instanceof AttemptFailure) || !error.retryable || attemptNumber === maxAttempts) throw error;
+
+          lastFailure = error;
+          const backoff = Math.min(MAX_RETRY_DELAY_MS, retryDelayMs * 2 ** (attemptNumber - 1));
+          const delayMs = error.retryAfterMs ?? backoff;
+          options.onRetry?.({ attempt: attemptNumber, status: error.status, delayMs });
+          await sleep(delayMs, options.signal ?? new AbortController().signal);
+        }
       }
 
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        const safeBody = redactSecrets(body, [options.apiKey]).replace(/\s+/g, " ").slice(0, MAX_ERROR_BODY_LENGTH);
-        throw new AiReviewerError(`provider returned ${response.status}: ${safeBody}`, response.status);
-      }
-
-      try {
-        return await response.json();
-      } catch {
-        throw new AiReviewerError("provider response was not valid JSON");
-      }
+      throw lastFailure ?? new AiReviewerError("provider request failed");
     },
   };
 }

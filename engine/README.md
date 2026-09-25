@@ -1,6 +1,6 @@
-# @codeguard/engine
+# @coderadar/engine
 
-The CodeGuard review engine. Local-first code review with a versioned finding
+The CodeRadar review engine. Local-first code review with a versioned finding
 contract, real evidence checks, and no dependency on the legacy Python backend.
 
 This package is Phase 1 of `docs/review-engine-migration-plan.md`. It reviews a
@@ -36,9 +36,9 @@ The deterministic detectors need no configuration. The model stage turns on when
 all three variables are set:
 
 ```bash
-export CODEGUARD_AI_ENDPOINT="https://integrate.api.nvidia.com/v1/chat/completions"
-export CODEGUARD_AI_KEY="..."
-export CODEGUARD_AI_MODEL="deepseek-ai/deepseek-v4.1-flash"
+export CODE_RADAR_AI_ENDPOINT="https://integrate.api.nvidia.com/v1/chat/completions"
+export CODE_RADAR_AI_KEY="..."
+export CODE_RADAR_AI_MODEL="deepseek-ai/deepseek-v4.1-flash"
 ```
 
 The runtime has zero dependencies. The model is reached over plain HTTP with

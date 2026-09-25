@@ -224,7 +224,7 @@ export function WindowTitleBar({ controls, onToggleSidebar, isSidebarCollapsed, 
     { type: "item", label: "Open File…", shortcut: "Ctrl+Shift+O", onClick: onNavigateHome },
     { type: "separator" },
     { type: "item", label: "Close Window", shortcut: "Ctrl+W", onClick: () => void controls?.close() },
-    { type: "item", label: "Quit CodeGuard", shortcut: "Ctrl+Q", onClick: () => void controls?.close() },
+    { type: "item", label: "Quit CodeRadar", shortcut: "Ctrl+Q", onClick: () => void controls?.close() },
   ];
 
   const editItems: MenuItemDef[] = [
@@ -250,11 +250,14 @@ export function WindowTitleBar({ controls, onToggleSidebar, isSidebarCollapsed, 
     { type: "item", label: "Actual Size", shortcut: "Ctrl+0", disabled: true },
   ];
 
+  // These point at the repository as it is actually named on GitHub. The product
+  // was renamed to CodeRadar, but the remote was not, so rewriting these to the
+  // new brand would turn two working links into 404s.
   const helpItems: MenuItemDef[] = [
     { type: "item", label: "GitHub Repository", href: "https://github.com/derohaze/CodeGuard-Desktop" },
     { type: "item", label: "Report an Issue", href: "https://github.com/derohaze/CodeGuard-Desktop/issues" },
     { type: "separator" },
-    { type: "item", label: "About CodeGuard", onClick: onNavigateHome },
+    { type: "item", label: "About CodeRadar", onClick: onNavigateHome },
   ];
 
   return (

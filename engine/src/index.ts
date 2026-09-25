@@ -1,5 +1,5 @@
 /**
- * Public API of the CodeGuard review engine.
+ * Public API of the CodeRadar review engine.
  *
  * Everything a consumer needs is re-exported here, and the core is imported
  * through this file so the internal module layout stays free to change. The
@@ -29,7 +29,19 @@ export type {
   FindingOrigin,
   RejectedCandidate,
   RejectionReason,
+  RepositoryIndex,
+  RepositoryHotspot,
 } from "./core/findings/model.ts";
+
+// Repository index, ported from the retired Rust indexer
+export {
+  indexRepository,
+  fileSignals,
+  hotspotFor,
+  describeRepositoryIndex,
+} from "./core/indexing/index-repository.ts";
+export type { IndexInput } from "./core/indexing/index-repository.ts";
+export { HOTSPOT_LIMIT, MANIFEST_FILES, MAX_INDEXED_FILE_BYTES } from "./core/indexing/catalog.ts";
 
 // Policy
 export {

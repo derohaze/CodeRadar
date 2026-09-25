@@ -6,7 +6,7 @@ export function BrandModeHeading({ mode = "security" }: { mode?: WorkspaceMode }
 
   return (
     <h1 className="inline-flex items-baseline whitespace-nowrap font-brand text-[22px] font-normal tracking-[-0.01em] text-txt-primary">
-      <span>CodeGuard</span>
+      <span>CodeRadar</span>
       {text ? (
         <span className="inline-grid min-w-[8ch] pl-2 text-left" aria-live="polite">
           <span className="col-start-1 row-start-1 inline-block">

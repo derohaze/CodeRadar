@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * `codeguard review <path>`
+ * `coderadar review <path>`
  *
  * The CLI is the smallest useful surface over the engine, and it exists so the
  * pipeline can be exercised and verified without the desktop app or the legacy
@@ -35,7 +35,7 @@ interface CliOptions {
   quiet: boolean;
 }
 
-const USAGE = `codeguard review <path> [options]
+const USAGE = `coderadar review <path> [options]
 
 Options:
   --json                 Emit the review report as JSON
@@ -49,9 +49,9 @@ Options:
 
 AI configuration is read from the environment. Without all three variables the
 review runs with the deterministic detectors only:
-  CODEGUARD_AI_ENDPOINT   Full chat-completions URL
-  CODEGUARD_AI_KEY        Provider API key
-  CODEGUARD_AI_MODEL      Model name`;
+  CODE_RADAR_AI_ENDPOINT   Full chat-completions URL
+  CODE_RADAR_AI_KEY        Provider API key
+  CODE_RADAR_AI_MODEL      Model name`;
 
 function parseArgs(argv: readonly string[]): CliOptions | null {
   const [command, ...rest] = argv;
@@ -107,9 +107,9 @@ function parseArgs(argv: readonly string[]): CliOptions | null {
 
 /** Builds the AI reviewer from the environment, or null when unconfigured. */
 function buildAiReviewer(): AiReviewerPort | null {
-  const endpoint = process.env.CODEGUARD_AI_ENDPOINT;
-  const apiKey = process.env.CODEGUARD_AI_KEY;
-  const model = process.env.CODEGUARD_AI_MODEL;
+  const endpoint = process.env.CODE_RADAR_AI_ENDPOINT;
+  const apiKey = process.env.CODE_RADAR_AI_KEY;
+  const model = process.env.CODE_RADAR_AI_MODEL;
 
   if (endpoint === undefined || apiKey === undefined || model === undefined) return null;
   if (endpoint === "" || apiKey === "" || model === "") return null;
@@ -205,7 +205,7 @@ async function main(): Promise<number> {
   const aiReviewer = options.useAi ? buildAiReviewer() : null;
   if (options.useAi && aiReviewer === null && !options.quiet) {
     process.stderr.write(
-      "No AI provider configured. Set CODEGUARD_AI_ENDPOINT, CODEGUARD_AI_KEY, and CODEGUARD_AI_MODEL to enable it.\n",
+      "No AI provider configured. Set CODE_RADAR_AI_ENDPOINT, CODE_RADAR_AI_KEY, and CODE_RADAR_AI_MODEL to enable it.\n",
     );
   }
 

@@ -25,7 +25,7 @@ const scanPresets = [
   },
 ] as const;
 
-const INTERACTIVE_MODE_KEY = "codeguard.interactiveMode";
+const INTERACTIVE_MODE_KEY = "coderadar.interactiveMode";
 
 type HomeScreenDefaults = {
   preset: (typeof scanPresets)[number]["id"];

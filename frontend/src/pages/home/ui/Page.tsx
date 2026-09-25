@@ -90,7 +90,7 @@ export default function Page() {
       setSessions(nextSessions);
       syncSessionOrder(nextSessions);
     } catch (error) {
-      console.error("[CodeGuard] Failed to refresh sessions", error);
+      console.error("[CodeRadar] Failed to refresh sessions", error);
       setSessions([]);
       setSessionOrder([]);
     }

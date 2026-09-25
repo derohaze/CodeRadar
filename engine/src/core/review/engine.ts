@@ -25,7 +25,9 @@ import { compareFindings } from "../findings/policy.ts";
 import { dedupeFindings } from "../findings/dedupe.ts";
 import { validateCandidate } from "../findings/validate.ts";
 import type { CandidateFinding } from "../findings/validate.ts";
+import { describeRepositoryIndex, indexRepository } from "../indexing/index-repository.ts";
 import { detectLanguage, detectProjectProfile } from "../languages/detect.ts";
+import type { RepositoryHotspot, RepositoryIndex } from "../findings/model.ts";
 import type { AiReviewerPort, FileSystemPort, GitPort, ReviewEvent, ReviewEventSink } from "../ports.ts";
 import { buildFileContext, buildRelatedFiles } from "../repository/context.ts";
 import type { FileContext } from "../repository/context.ts";
@@ -161,6 +163,23 @@ export class ReviewEngine {
     const index = createSourceIndex(sources);
     const sourcesByPath = new Map(sources.map((source) => [source.path, source]));
 
+    // Repository intelligence is computed from files already in hand, so it
+    // costs no additional reads. The Rust indexer owned this step before the
+    // migration; the numbers are the same, the runtime is no longer separate.
+    const repositoryIndex = indexRepository({
+      paths: discovered.map((file) => file.path),
+      contents: new Map(sources.map((source) => [source.path, source.content])),
+    });
+    this.emit({
+      type: "index:done",
+      message: describeRepositoryIndex(repositoryIndex),
+      counts: {
+        files: repositoryIndex.filesIndexed,
+        hotspots: repositoryIndex.hotspots.length,
+        routeFiles: repositoryIndex.routeFiles,
+      },
+    });
+
     const targets = selectReviewTargets(
       discovered.filter((file) => index.has(file.path)),
       {
@@ -196,6 +215,7 @@ export class ReviewEngine {
       contexts,
       diffState,
       index,
+      repositoryIndex,
       pathBase,
       maxAiFiles,
       maxFindings,
@@ -264,13 +284,14 @@ export class ReviewEngine {
     this.emit({ type: "done", message: "Review complete", progress: 1 });
 
     return {
-      schema: "codeguard.review.findings.v1",
+      schema: "coderadar.review.findings.v1",
       verdict: findings.length === 0 ? "approve" : "needs-attention",
       summary: buildSummary(findings, scope, stats, aiResult.summary),
       scope,
       findings,
       rejected,
       stats,
+      repositoryIndex,
     };
   }
 
@@ -406,6 +427,7 @@ export class ReviewEngine {
     contexts: ReadonlyMap<string, FileContext>,
     diffState: DiffState,
     index: SourceIndex,
+    repositoryIndex: RepositoryIndex,
     pathBase: string,
     maxAiFiles: number,
     maxFindings: number,
@@ -415,21 +437,18 @@ export class ReviewEngine {
     if (reviewer === undefined) return { candidates: [], summary: null };
 
     const bundle = await loadPromptBundle(this.options.fs, this.options.promptsDir);
-    const selected = targets.slice(0, maxAiFiles);
+    const selected = prioritiseHotspots(targets, repositoryIndex.hotspots).slice(0, maxAiFiles);
     if (selected.length === 0) return { candidates: [], summary: null };
 
     const project = detectProjectProfile(index.paths());
     const tooling = await detectTooling(this.options.fs, pathBase);
-    const systemPrompt = buildSystemPrompt({
-      bundle,
-      maxFindings,
-      projectLine: describeProject(
-        project.kind,
-        project.packageManager,
-        project.languages,
-        tooling.linterConfigs,
-      ),
-    });
+    const projectLine = [
+      describeProject(project.kind, project.packageManager, project.languages, tooling.linterConfigs),
+      describeRepositoryIndex(repositoryIndex),
+    ]
+      .filter((part) => part !== "")
+      .join(". ");
+    const systemPrompt = buildSystemPrompt({ bundle, maxFindings, projectLine });
 
     const candidates: CandidateFinding[] = [];
     let summary: string | null = null;
@@ -492,6 +511,31 @@ function isInside(ancestor: string, candidate: string): boolean {
   const parent = normalise(ancestor);
   const child = normalise(candidate);
   return child === parent || child.startsWith(`${parent}/`);
+}
+
+/**
+ * Orders review targets so hotspot files reach the model before the review
+ * budget runs out, preserving the caller's ordering inside each group.
+ *
+ * This is the only job the ported index has in the pipeline. Scoring a file as a
+ * hotspot never produces a finding — a marker match is not evidence of a defect.
+ */
+function prioritiseHotspots(
+  targets: readonly ReviewTarget[],
+  hotspots: readonly RepositoryHotspot[],
+): ReviewTarget[] {
+  if (hotspots.length === 0) return [...targets];
+
+  const hotspotPaths = new Set(hotspots.map((hotspot) => hotspot.file));
+  const ranked: ReviewTarget[] = [];
+  const remaining: ReviewTarget[] = [];
+
+  for (const target of targets) {
+    if (hotspotPaths.has(target.file.path)) ranked.push(target);
+    else remaining.push(target);
+  }
+
+  return [...ranked, ...remaining];
 }
 
 /**

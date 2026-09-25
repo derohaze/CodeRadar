@@ -1,0 +1,92 @@
+{
+  "ranAt": "2026-09-25T01:06:40.132Z",
+  "model": {
+    "baseUrl": "https://integrate.api.nvidia.com/v1",
+    "model": "nvidia/nemotron-3-super-120b-a12b"
+  },
+  "checks": [
+    {
+      "name": "Electron GUI",
+      "status": "PASS",
+      "detail": "window opened, title \"CodeRadar\", home screen rendered"
+    },
+    {
+      "name": "Renderer wired to the engine",
+      "status": "PASS",
+      "detail": "review setup screen and sidebar rendered with no start-up error"
+    },
+    {
+      "name": "Provider test connection (live call)",
+      "status": "FAIL",
+      "detail": "the provider never answered"
+    },
+    {
+      "name": "Provider saved through the GUI",
+      "status": "PASS",
+      "detail": "stored provider reads back as Active: nvidia · nvidia/nemotron-3-super-120b-a12b · ••••novo / nvidia/nemotron-3-super-120b-a12b / key stored"
+    },
+    {
+      "name": "Folder review reaches results",
+      "status": "PASS",
+      "detail": "the review started, showed progress, and rendered results"
+    },
+    {
+      "name": "No Python or Rust in the runtime",
+      "status": "PASS",
+      "detail": "no python/uvicorn/rust-indexer process existed while the review ran"
+    },
+    {
+      "name": "Folder review reports findings",
+      "status": "PASS",
+      "detail": "10 finding(s) in the app's own summary (1 open, 9 queued, 0 candidate)"
+    },
+    {
+      "name": "Folder review stays inside the chosen folder",
+      "status": "PASS",
+      "detail": "coverage reads \"9/9\" for a 9-file fixture"
+    },
+    {
+      "name": "No duplicate finding anchors",
+      "status": "PASS",
+      "detail": "1 anchor(s) read from the open list, each reported once"
+    },
+    {
+      "name": "Finding click -> detail anchored to the right line",
+      "status": "PASS",
+      "detail": "detail panel shows engine/test/fixtures/buggy/src/collections.ts:18"
+    },
+    {
+      "name": "Finding detail carries evidence from the source",
+      "status": "PASS",
+      "detail": "the detail panel quotes code from the file"
+    },
+    {
+      "name": "Single-file review stays scoped to the file",
+      "status": "FAIL",
+      "detail": "coverage reads \"9/9\" (one file), 1 finding(s) outside the selected file"
+    },
+    {
+      "name": "Single-file review reports the file's defect",
+      "status": "PASS",
+      "detail": "10 finding(s): 1 open, 9 queued, 0 candidate"
+    },
+    {
+      "name": "False positives: correct code yields 0 findings",
+      "status": "FAIL",
+      "detail": "unexpected findings: 2 (File | Open Folder… | Open File… | SECURITY SCORE — GREPTILE 5-POINT | AI score explanation | Current review state: 0 open finding(s), 2 queued approval item(s), 0 candidate finding(s). | Review coverage | 100% COVERED | 1 of 1 discovered file was read and reviewed. | Files reviewed: 1/1 | FRAMEWORK PROFILE | 0 route files and 0 auth files | 0 cross-file paths identified | 1 review items | SCORE RATIONALE | 0 open | Queue 2 item(s) - coverage 100 percent - candidate pressure 0 | POTENTIAL RISKS | No additional potential risk was surfaced beyond the validated queue | 1. Findings are anchored to lines changed against origin/main; the other files in scope were still reviewed in full. | 1. Apply the recommended fix for 2 findings and re-run the review. | Validated findings | OPEN FINDINGS ONLY | All validated findings in this session are already tracked in the review queue below)"
+    },
+    {
+      "name": "smoke run",
+      "status": "FAIL",
+      "detail": "aborted: page.evaluate: Target page, context or browser has been closed"
+    }
+  ],
+  "notes": [
+    "provider key was already stored",
+    "finding: engine/test/fixtures/buggy/src/collections.ts:18 Numeric array is sorted lexicographically (correctness)",
+    "results digest: File | Open Folder… | Open File… | The file exports a test fixture containing a fake API key for the purpose of testing a secret detector. The key is explicitly marked as fake and not a working key for any service, and the fixture is located in a test directory. No defects are found that clear the review bar. | SECURITY SCORE — GREPTILE 5-POINT | AI score explanation | The file exports a test fixture containing a fake API key for the purpose of testing a secret detector. The key is explicitly marked as fake and not a working key for any service, and the fixture is located in a test directory. No defects are found that clear the review bar. | Current review state: 1 open finding(s), 9 queued approval item(s), 0 candidate finding(s). | Review coverage | 100% COVERED | 9 of 9 discovered files were read and reviewed. | Files reviewed: 9/9 | FRAMEWORK PROFILE | 0 route files and 1 auth files | 0 cross-file paths identified | 9 review items | SCORE RATIONALE | 1 open | Queue 9 item(s) - coverage 100 percent - candidate pressure 0 | POTENTIAL RISKS | No additional potential risk was surfaced beyond the validated queue | 1. Findings are anchored to lines changed against origin/main; the other files in scope were still reviewed in full. | 1. Apply the recommended fix for 10 findings and re-run the review. | Validated findings",
+    "single-file digest: File | Open Folder… | Open File… | The file exports a test fixture containing a fake API key for the purpose of testing a secret detector. The key is explicitly marked as fake and not a working key for any service, and the fixture is located in a test directory. No defects are found that clear the review bar. | SECURITY SCORE — GREPTILE 5-POINT | AI score explanation | The file exports a test fixture containing a fake API key for the purpose of testing a secret detector. The key is explicitly marked as fake and not a working key for any service, and the fixture is located in a test directory. No defects are found that clear the review bar. | Current review state: 1 open finding(s), 9 queued approval item(s), 0 candidate finding(s). | Review coverage | 100% COVERED | 9 of 9 discovered files were read and reviewed. | Files reviewed: 9/9 | FRAMEWORK PROFILE | 0 route files and 1 auth files | 0 cross-file paths identified | 9 review items | SCORE RATIONALE | 1 open | Queue 9 item(s) - coverage 100 percent - candidate pressure 0 | POTENTIAL RISKS | No additional potential risk was surfaced beyond the validated queue | 1. Findings are anchored to lines changed against origin/main; the other files in scope were still reviewed in full. | 1. Apply the recommended fix for 10 findings and re-run the review. | Validated findings",
+    "renderer console error: Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "renderer console error: [CodeRadar] API request failed {path: /scans, method: POST, status: 409, body: Object}"
+  ]
+}

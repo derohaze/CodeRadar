@@ -1,7 +1,7 @@
 /**
  * Canonical review finding model.
  *
- * This is a NEW versioned contract (`codeguard.review.findings.v1`). It is kept
+ * This is a NEW versioned contract (`coderadar.review.findings.v1`). It is kept
  * deliberately separate from the legacy scan `Finding` type the frontend still
  * consumes, so the shipping app keeps working while the review flow is built
  * alongside it. See docs/review-engine-migration-plan.md, section "Phases".
@@ -11,7 +11,7 @@
  * that cannot fill `evidence` is not a finding, and the validator drops it.
  */
 
-export const REVIEW_SCHEMA = "codeguard.review.findings.v1" as const;
+export const REVIEW_SCHEMA = "coderadar.review.findings.v1" as const;
 export type ReviewSchema = typeof REVIEW_SCHEMA;
 
 export const REVIEW_SEVERITIES = ["critical", "high", "medium", "low"] as const;
@@ -136,6 +136,36 @@ export interface ReviewScope {
   diffAware: boolean;
 }
 
+/** A file worth a reviewer's first attention. Never a finding on its own. */
+export interface RepositoryHotspot {
+  file: string;
+  score: number;
+  reasons: string[];
+}
+
+/**
+ * Repository intelligence gathered while reviewing: what the tree is made of
+ * and where its risky entry points are. Recorded on the report so the UI can
+ * show what was understood, and used to order which files the model sees first.
+ */
+export interface RepositoryIndex {
+  filesIndexed: number;
+  /** Language id to file count. */
+  languages: Record<string, number>;
+  /** Repository-relative paths of dependency manifests. */
+  manifests: string[];
+  routeFiles: number;
+  authFiles: number;
+  sourceMarkers: number;
+  sinkMarkers: number;
+  /** Highest-scoring first, then by path. */
+  hotspots: RepositoryHotspot[];
+  truncatedFiles: number;
+  bytesIndexed: number;
+  /** True when no file content was available, so markers could not be counted. */
+  contentUnavailable: boolean;
+}
+
 export interface ReviewReport {
   schema: ReviewSchema;
   verdict: "approve" | "needs-attention";
@@ -145,6 +175,7 @@ export interface ReviewReport {
   findings: ReviewFinding[];
   rejected: RejectedCandidate[];
   stats: ReviewStats;
+  repositoryIndex: RepositoryIndex;
 }
 
 export function severityRank(severity: ReviewSeverity): number {

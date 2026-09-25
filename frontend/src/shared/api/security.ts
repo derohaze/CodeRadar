@@ -2,7 +2,18 @@ import type { Finding, FindingDecisionSummary, RemediationActionResult, Remediat
 import type { Session, SessionAnalysisBrief } from "@/entities/session/model/types";
 import { fetchWithStartupRetry } from "@/shared/api/network";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:9000/api/v1";
+// The desktop app runs the review engine in its own main process and hands the
+// renderer the address it bound. The environment variable and the fallback stay
+// for a renderer served outside Electron, where nothing is listening anyway.
+const API_BASE_URL =
+  (typeof window !== "undefined" ? window.electronAPI?.apiBaseUrl ?? null : null) ??
+  import.meta.env.VITE_API_BASE_URL ??
+  "http://127.0.0.1:9000/api/v1";
+
+// The local API reads the user's source tree and can send it to a model
+// provider, so it refuses anything that cannot present the launch token. It is
+// never persisted; the main process regenerates it on every start.
+const API_TOKEN = typeof window !== "undefined" ? window.electronAPI?.apiToken ?? null : null;
 
 export interface StartScanPayload {
   sourcePath: string;
@@ -234,7 +245,10 @@ export function subscribeToScanEvents(
     onError?: () => void;
   },
 ): () => void {
-  const source = new EventSource(`${API_BASE_URL}/scans/${sessionId}/events`);
+  // `EventSource` cannot send headers, so the token travels as a query
+  // parameter on this one route.
+  const tokenQuery = API_TOKEN === null ? "" : `?token=${encodeURIComponent(API_TOKEN)}`;
+  const source = new EventSource(`${API_BASE_URL}/scans/${sessionId}/events${tokenQuery}`);
   const handleDetail = (event: MessageEvent<string>, terminal: boolean) => {
     const parsed = JSON.parse(event.data) as ScanSessionDetailApiResponse;
     const detail = mapScanSessionDetail(parsed);
@@ -295,12 +309,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetchWithStartupRetry(`${API_BASE_URL}${path}`, {
       headers: {
         "Content-Type": "application/json",
+        ...(API_TOKEN === null ? {} : { "X-CodeRadar-Token": API_TOKEN }),
         ...(init?.headers ?? {}),
       },
       ...init,
     });
   } catch (error) {
-    console.error("[CodeGuard] Network request failed", {
+    console.error("[CodeRadar] Network request failed", {
       path,
       method: init?.method ?? "GET",
       error,
@@ -317,7 +332,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       body = null;
     }
 
-    console.error("[CodeGuard] API request failed", {
+    console.error("[CodeRadar] API request failed", {
       path,
       method: init?.method ?? "GET",
       status: response.status,

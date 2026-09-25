@@ -85,7 +85,7 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
             {safeVerdict ? "No validated security issue was confirmed in the selected scope" : "Validated repository assessment"}
           </p>
           <p className="mt-2 text-sm leading-6 text-txt-secondary">
-            {toAnalystCopy(session.session.repositorySummary) || (safeVerdict ? "The selected source was reviewed and no high-confidence issue was confirmed" : "CodeGuard completed the repository assessment")}
+            {toAnalystCopy(session.session.repositorySummary) || (safeVerdict ? "The selected source was reviewed and no high-confidence issue was confirmed" : "CodeRadar completed the repository assessment")}
           </p>
           {!hasFindings && hasCoverageGap && (
             <p className="mt-2 text-sm leading-6 text-txt-secondary">
@@ -390,14 +390,14 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
               emptyMessage="No distinct defensive observation was captured for this run"
             />
             <AnalystListCard
-              label="What CodeGuard could not verify"
+              label="What CodeRadar could not verify"
               intro="These are real review limits from the reviewed run, not proof that the code is unsafe"
               items={analysisBrief.analysisLimitations}
               emptyMessage="No major verification limit was surfaced for this run"
             />
             <AnalystListCard
               label="If I were attacking this"
-              intro="Attack probes CodeGuard would prioritize next against the reviewed surfaces"
+              intro="Attack probes CodeRadar would prioritize next against the reviewed surfaces"
               items={analysisBrief.attackThinking}
               emptyMessage="No additional attack probe was highlighted beyond the reviewed surfaces"
             />

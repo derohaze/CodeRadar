@@ -1,191 +1,203 @@
-# CodeGuard
+# CodeRadar
 
-CodeGuard is an AI-powered security testing platform that automates vulnerability detection, analysis, and remediation. The system combines multiple runtime environments, specialized AI agents, and a modular skill system to provide comprehensive security scanning capabilities for applications and repositories.
+CodeRadar is a local-first code review desktop app. You point it at a file or a folder, it reads the
+code, and it reports the defects it can prove — each with the quoted evidence it came from, the
+consequence if it ships, and a concrete fix.
+
+Everything runs on your machine. There is one runtime: **Electron + Node.js + TypeScript**. No Python
+and no Rust are required, installed, or invoked at runtime.
 
 ## Architecture
 
-CodeGuard employs a multi-runtime backend architecture designed for performance and reliability:
-
-| Runtime | Service | Port | Responsibility |
-|---|---|---|---|
-| Python | `python-api` | 9000 | FastAPI contracts, scan orchestration, AI routing, MongoDB/Redis coordination, remediation workflows |
-| Rust | `rust-indexer` | 7100 | Native bounded repository indexing and hotspot pre-analysis |
-
-### Frontend
-- **Framework**: React 18 with TypeScript
-- **Build Tool**: Vite
-- **UI Components**: Shadcn UI with Radix UI primitives
-- **Desktop**: Electron for cross-platform desktop application
-- **State Management**: TanStack Query for server state
-- **Routing**: React Router v6
-- **Styling**: Tailwind CSS
-
-## Key Features
-
-### AI-Powered Security Testing
-- **Multi-Agent System**: Specialized agents for detection, explanation, fix generation, penetration testing, and validation
-- **Agent Orchestration**: Policy engine with memory management and context compaction
-- **Model Router**: Multi-provider AI configuration with intelligent routing
-- **Skill System**: Modular, extensible skill-based testing capabilities
-
-### Security Capabilities
-- **Vulnerability Detection**: Automated identification of security issues across multiple domains
-- **Penetration Testing**: AI-driven penetration testing with sandboxed execution
-- **Remediation**: AI-generated fix suggestions with validation and rollback capabilities
-- **Coverage Tracking**: Comprehensive coverage analysis for security scans
-
-### Specialized Security Skills
-The platform includes specialized skills for various security domains:
-- **Web Vulnerabilities**: IDOR, BAC, injection attacks, SSRF, XSS
-- **Authentication**: JWT attacks (algorithm confusion, key manipulation, weak secrets)
-- **API Security**: GraphQL analysis, race conditions, deserialization attacks
-- **Infrastructure**: SSRF, takeover vulnerabilities, service reconnaissance
-
-### Intelligence and Learning
-- **Continuous Learning**: External knowledge ingestion and feedback integration
-- **Repository Intelligence**: Hotspot detection and service exposure analysis
-- **Team Posture**: Security posture tracking and reporting
-- **Benchmark System**: Security benchmarking and performance metrics
-
-## Getting Started
-
-### Prerequisites
-- Python 3.10+ (for Python API)
-- Rust and Cargo (optional, for Rust indexer)
-- MongoDB and Redis (for data persistence and queue)
-- Bun (for frontend development)
-
-### Backend Setup
-
-1. **Install Python Dependencies**:
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   ```
-
-2. **Build Rust Indexer** (optional but recommended):
-   ```bash
-   cd backend/rust-indexer
-   cargo build --release
-   ```
-
-3. **Start All Backend Services**:
-   ```bash
-   cd backend
-   python main.py
-   ```
-
-   This starts the Python API and the Rust indexer (if built) automatically.
-
-### Frontend Setup
-
-1. **Install Dependencies**:
-   ```bash
-   bun install
-   ```
-
-2. **Development Mode**:
-   ```bash
-   bun run dev
-   ```
-
-3. **Desktop Application**:
-   ```bash
-   bun run electron:dev
-   ```
-
-4. **Build for Production**:
-   ```bash
-   bun run electron:build:win
-   ```
-
-### API Access
-
-The main API endpoint is:
 ```
-http://127.0.0.1:9000/api/v1
+CodeRadar
+│
+├── Electron
+│   ├── Main process ──────────────────────────────┐
+│   └── React renderer                             │
+│                                                  ▼
+│                                        TypeScript review engine
+│                                        ├── Repository discovery
+│                                        ├── Git (branch, diff, changed lines)
+│                                        ├── Repository index (languages, manifests, hotspots)
+│                                        ├── Context (imports and export surfaces)
+│                                        ├── Deterministic detectors
+│                                        ├── AI review (OpenAI-compatible providers)
+│                                        ├── Validation (evidence must be in the source)
+│                                        ├── Dedupe and the confidence bar
+│                                        └── Findings
+│                                                  │
+│                                        local API on 127.0.0.1
+│                                                  │
+└──────────────────────────────────────────────────┘
 ```
 
-Available endpoints:
-- `/scans` - Scan management and execution
-- `/sessions` - Session management
-- `/remediation` - Fix generation and application
-- `/learning` - Learning system integration
-- `/settings` - Runtime configuration
-- `/skills` - Skill registry and management
-- `/coverage` - Coverage analysis
-- `/health` - System health checks
+The engine core (`engine/src/core/`) imports no `node:fs`, no `node:path`, and never shells out. It
+depends on two ports — a filesystem and a git adapter — which is why the whole pipeline is testable
+against fixtures, and why the same code serves the desktop app and the CLI.
 
-## Project Structure
+Two things are load-bearing and enforced by the engine, not by convention:
+
+- **Nothing reaches a report without passing validation.** A finding must quote code that is actually
+  in the file it names, at a line that is actually in range. There is no bypass for detectors, for the
+  model, or for a future adapter.
+- **A failed model call is not a failed review.** An unavailable provider degrades the run to the
+  deterministic checks and says so on the progress stream.
+
+## Repository layout
 
 ```
-codeguard/
-├── backend/
-│   ├── app/                          # Python FastAPI application
-│   │   ├── application/              # Use cases and DTOs
-│   │   ├── domain/                   # Domain entities and repositories
-│   │   ├── infrastructure/           # AI agents, database, queue
-│   │   └── presentation/              # API routes and controllers
-│   ├── rust-indexer/                 # Rust native indexer
-│   │   └── src/                      # Indexing and hotspot analysis
-│   └── main.py                       # Backend entry point
-├── src/                              # React frontend application
-├── electron/                         # Electron desktop app
-│   ├── main.cjs                      # Electron main process
-│   └── preload.cjs                   # Preload script
-├── docs/                             # Documentation
-└── AGENTS.md                         # Development guidelines
+engine/                    the review engine (TypeScript, no runtime dependencies)
+  src/core/                pipeline: language detection, discovery, index, diff, context, findings
+  src/adapters/            node filesystem and git
+  src/node/                settings, providers, the review service, the local API
+  src/cli.ts               `bun run review <path>`
+  prompts/                 the review policy and reviewer persona, as markdown (canonical)
+  test/                    fixtures with planted defects, and the suite that pins them
+frontend/                  Electron + React desktop app
+  electron/main.cjs        starts the engine in-process and opens the window
+  electron/review-engine.cjs  the engine, bundled from engine/src/node/electron-entry.ts
+  electron/prompts/        generated copy of engine/prompts, written by the build
+  src/                     React renderer
+docs/                      design notes and the migration record
+```
+
+## Getting started
+
+Prerequisites: **Bun** and **git**. Nothing else — the same toolchain runs the engine,
+its tests, and the bundle the desktop app loads.
+
+```bash
+cd frontend && bun install
+cd ../engine && bun install
+```
+
+### Running it
+
+The review engine and the app are separate processes, and there are two ways to start
+them. Both give you the same app.
+
+**One command, engine in its own process** (the normal development flow):
+
+```bash
+cd frontend
+bun run dev:all
+```
+
+This starts the engine on its own, waits for it to answer, then starts Vite and
+Electron and tells the app where the engine is. The engine's URL and token are printed at
+startup, so you can `curl` it while the app runs:
+
+```
+CodeRadar: engine ready at http://127.0.0.1:54321/api/v1
+CodeRadar: token 9f2c... (send it as the x-coderadar-token header)
+```
+
+**App only, engine embedded** (nothing else to run; Electron starts the engine itself):
+
+```bash
+cd frontend
+bun run electron:dev
+```
+
+Use `dev:all` when you are working on the engine: you can restart it alone, hit its routes
+directly, and watch it fail without losing the UI. Use `electron:dev` when you only care
+about the app, or to check the packaged behaviour, where the engine is embedded because a
+desktop app cannot ask the user to start a server first.
+
+### The engine on its own
+
+The engine is a complete backend on its own, with no Electron involved:
+
+```bash
+cd engine
+bun run serve                 # local API on 127.0.0.1:9000, prints its token and a curl example
+```
+
+And a one-shot review from the command line, which needs no server at all:
+
+```bash
+cd engine
+bun run review ../frontend/src --json
+bun run review . --changed-only --base main --fail-on high
+```
+
+### Building
+
+```bash
+cd frontend && bun run electron:build:win   # installer
+```
+
+The engine is bundled into `frontend/electron/review-engine.cjs` before the app is built or
+developed, because that file is what the Electron main process loads. `electron:dev`,
+`electron:build`, and `electron:build:win` all run this step first, so none of them can start the
+app against a bundle older than `engine/src`:
+
+```bash
+cd frontend && bun run engine:bundle   # also copies engine/prompts into electron/prompts
+```
+
+Both generated paths are ignored by git. They are regenerated from `engine/src` and
+`engine/prompts`, which are the sources of truth.
+
+### Review from the command line
+
+The engine is useful without the desktop app:
+
+```bash
+cd engine
+bun run review ../frontend/src --json
+bun run review . --changed-only --base main --fail-on high
+```
+
+AI is opt-in from the environment; without all three variables the review runs the deterministic
+detectors only:
+
+```
+CODE_RADAR_AI_ENDPOINT   Full chat-completions URL
+CODE_RADAR_AI_KEY        Provider API key
+CODE_RADAR_AI_MODEL      Model name
 ```
 
 ## Configuration
 
-Key configuration options can be set through environment variables or runtime settings:
+| Variable | Default | Meaning |
+|---|---|---|
+| `CODE_RADAR_API_PORT` | `9000` when served alone, ephemeral inside the app | Port for the local review API. The app tells the renderer where it landed, so this is only needed to pin a port. |
+| `CODE_RADAR_API_TOKEN` | generated per start | Secret every data route requires. Printed by `bun run serve`. |
+| `CODE_RADAR_SETTINGS_DIR` | the OS user-data directory | Where `settings.json` and the standalone local key live. |
+| `CODE_RADAR_API_BASE_URL` | unset | Set on the **app** to make it connect to an already-running engine instead of starting its own. This is what `dev:all` sets. |
 
-- `APP_ENV` - Application environment (development/production)
-- `APP_HOST` - API host address
-- `APP_PORT` - API port (default: 9000)
-- `RUST_INDEXER_ENABLED` - Enable Rust indexer
-- `RUST_INDEXER_AUTO_BUILD` - Auto-build Rust indexer on startup
-- `QUEUE_BACKEND` - Queue backend selection (redis/arq)
+Provider, model, API key, and review defaults are stored as JSON in the app's user-data directory and
+edited through the app's Settings screen. The API key is encrypted with the OS keychain
+(`safeStorage`); on a machine with no key store the app refuses to save one rather than writing it in
+clear.
 
-## Development
+## Testing
 
-### Backend Development
 ```bash
-cd backend
-python main.py    # Start the Python API and Rust indexer
+cd engine   && bun run typecheck && bun test    # 162 tests
+cd frontend && bun run test                     # 69 tests
 ```
 
-### Frontend Development
-```bash
-bun run dev              # Start Vite dev server
-bun run build            # Build for production
-bun run test             # Run tests
-bun run lint             # Lint code
-```
+The engine suite covers the pipeline, the repository index, the settings store, and the local API
+contract end-to-end — including the security envelope, which is tested against real requests.
 
-### Testing
-- **Backend**: Python tests with pytest
-- **Frontend**: Vitest for unit tests, Playwright for E2E tests
+## Security model
 
-## Security Considerations
+The local API is the only part of the app that listens on a socket, and it can read the user's source
+tree and send it to a model provider. Four controls, each closing a specific hole:
 
-CodeGuard is designed with security as a primary concern:
-- Sandboxed execution for penetration testing
-- Multi-tenant isolation support
-- Comprehensive input validation
-- Secure credential management
-- Rate limiting and throttling
-- Audit logging for all operations
+1. It binds to `127.0.0.1` only.
+2. Every data route requires a **per-launch token** that the main process generates and never writes
+   to disk. A web page in the user's browser cannot read it.
+3. The `Origin` header is checked against the app's own origins, and `Access-Control-Allow-Origin` is
+   never a wildcard, so no other page can read a response.
+4. The `Host` header must be loopback, which refuses DNS-rebinding requests.
+
+Provider base URLs are validated before use: `https` unless the host is loopback, no embedded
+credentials, and no private or link-local addresses.
 
 ## License
 
 [Specify your license here]
-
-## Contributing
-
-[Specify contribution guidelines here]
-
-## Support
-
-For issues, questions, or contributions, please refer to the project documentation or contact the development team.

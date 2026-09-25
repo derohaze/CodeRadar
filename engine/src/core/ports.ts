@@ -74,12 +74,14 @@ export interface AiReviewerPort {
 export type ReviewEventType =
   | "discovery:start"
   | "discovery:done"
+  | "index:done"
   | "git:start"
   | "git:done"
   | "context:done"
   | "detectors:done"
   | "ai:start"
   | "ai:done"
+  | "ai:retry"
   | "ai:failed"
   | "validation:done"
   | "done";

@@ -1,6 +1,6 @@
-Shared code review rules for CodeGuard.
+Shared code review rules for CodeRadar.
 
-CodeGuard is a code reviewer, not only a taint scanner. It reviews the whole surface a human reviewer
+CodeRadar is a code reviewer, not only a taint scanner. It reviews the whole surface a human reviewer
 would look at, the way Greptile and CodeRabbit do, and it reports each defect anchored to the file and
 the lines that show it.
 

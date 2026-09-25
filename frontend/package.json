@@ -1,5 +1,5 @@
 {
-  "name": "codeguard-desktop",
+  "name": "coderadar-desktop",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -12,15 +12,19 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "electron:dev": "concurrently \"cross-env NODE_ENV=development vite\" \"wait-on http://localhost:8080 && cross-env NODE_ENV=development electron .\"",
+    "api:dev": "bun ../engine/src/node/serve.ts",
+    "dev:all": "bun run scripts/dev.mjs",
+    "engine:bundle": "cd ../engine && bun run build:electron",
+    "gui:smoke": "node scripts/gui-smoke.mjs",
+    "electron:dev": "bun run engine:bundle && concurrently \"cross-env NODE_ENV=development vite\" \"wait-on http://localhost:8080 && cross-env NODE_ENV=development electron .\"",
     "electron:repair": "bun install --force",
     "electron:dev:repair": "bun run electron:repair && bun run electron:dev",
-    "electron:build": "vite build && electron-builder",
-    "electron:build:win": "vite build && electron-builder --win"
+    "electron:build": "bun run engine:bundle && vite build && electron-builder",
+    "electron:build:win": "bun run engine:bundle && vite build && electron-builder --win"
   },
   "build": {
-    "appId": "com.codeguard.desktop",
-    "productName": "CodeGuard",
+    "appId": "com.coderadar.desktop",
+    "productName": "CodeRadar",
     "directories": {
       "output": "release"
     },
@@ -32,7 +36,7 @@
     "win": {
       "target": ["nsis"],
       "icon": "public/icon.ico",
-      "executableName": "CodeGuard"
+      "executableName": "CodeRadar"
     },
     "nsis": {
       "installerIcon": "public/icon.ico",

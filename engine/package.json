@@ -1,17 +1,19 @@
 {
-  "name": "@codeguard/engine",
+  "name": "@coderadar/engine",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "CodeGuard review engine: local-first code review pipeline (discovery, context, diff, findings)",
+  "description": "CodeRadar review engine: local-first code review pipeline (discovery, context, diff, findings)",
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
+    "serve": "bun run src/node/serve.ts",
     "review": "bun run src/cli.ts review",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:electron": "bun build src/node/electron-entry.ts --target=node --format=cjs --outfile=../frontend/electron/review-engine.cjs && bun run scripts/sync-electron-prompts.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.1.14",

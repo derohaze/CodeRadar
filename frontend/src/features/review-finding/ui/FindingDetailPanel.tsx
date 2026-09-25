@@ -168,7 +168,7 @@ export function FindingDetailPanel({ finding, onDismiss, onSuggestFix }: Props) 
 
               <Panel>
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-txt-primary">Why CodeGuard recommends a fix</p>
+                  <p className="text-sm font-semibold text-txt-primary">Why CodeRadar recommends a fix</p>
                   <span className="text-xs text-txt-tertiary">Security-specific guidance</span>
                 </div>
                 <div className="space-y-3">
