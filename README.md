@@ -7,6 +7,47 @@ consequence if it ships, and a concrete fix.
 Everything runs on your machine. There is one runtime: **Electron + Node.js + TypeScript**. No Python
 and no Rust are required, installed, or invoked at runtime.
 
+## What it looks like
+
+These are screenshots of the running app, not mock-ups. They were taken by
+`frontend/scripts/screenshots.mjs`, which drives the same Electron window a user drives and runs a
+real review of `engine/test/fixtures/buggy` through a real model provider.
+
+**Pick a source, choose a preset, run the review.**
+
+![Review setup screen](docs/screenshots/01-review-setup.png)
+
+**Connect a provider.** The key is tested with a live call before it is saved, and it is listed back
+masked once active.
+
+![Provider settings with a live connection test](docs/screenshots/02-providers.png)
+
+**The review runs in the app.** Progress streams as the engine walks the repository.
+
+![A review in progress](docs/screenshots/03-review-running.png)
+
+**Findings, and what the bar dropped.** The results screen separates validated findings from the
+candidates the review bar refused, so a dropped claim stays visible as a count instead of silently
+disappearing.
+
+![Validated findings for a reviewed repository](docs/screenshots/04-findings.png)
+
+**Open a finding.** Each one carries its severity, the confidence behind it, and the fix it proposes.
+
+![A finding's detail and proposed fix](docs/screenshots/05-finding-detail.png)
+
+To regenerate the set, start the dev server and point the script at your own provider:
+
+```bash
+cd frontend
+bun run dev &
+CODERADAR_AI_KEY=... node scripts/screenshots.mjs
+```
+
+The script replaces the whole set on every run and asserts the marker each screen is known by, so a
+capture cannot go stale silently: when the progress screen or the findings list is not on screen, it
+says the capture was skipped instead of writing a picture of the wrong thing.
+
 ## Architecture
 
 ```
@@ -176,12 +217,15 @@ clear.
 ## Testing
 
 ```bash
-cd engine   && bun run typecheck && bun test    # 171 tests
+cd engine   && bun run typecheck && bun test    # 180 tests
 cd frontend && bun run test                     # 69 tests
 ```
 
 The engine suite covers the pipeline, the repository index, the settings store, and the local API
-contract end-to-end — including the security envelope, which is tested against real requests.
+contract end-to-end — including the security envelope, which is tested against real requests. The
+finding validator is pinned by regression tests taken from real model output, including the three
+ways a model can write a true claim differently from the file (a quote character, a dash, and the
+statement terminator at the end of an excerpt) and the controls that must stay rejected.
 
 ## Security model
 

@@ -19,6 +19,7 @@ import {
 import type {
   FindingOrigin,
   RejectedCandidate,
+  RejectionDiagnostics,
   RejectionReason,
   ReviewAxis,
   ReviewFinding,
@@ -75,10 +76,11 @@ export type ValidationOutcome =
   | { ok: true; finding: ReviewFinding }
   | { ok: false; rejected: RejectedCandidate };
 
-function reject(
+function rejectOutcome(
   candidate: { file: string; line: number; title: string },
   reason: RejectionReason,
   detail: string,
+  diagnostics?: RejectionDiagnostics,
 ): ValidationOutcome {
   return {
     ok: false,
@@ -88,6 +90,7 @@ function reject(
       title: candidate.title || "(untitled)",
       reason,
       detail,
+      ...(diagnostics === undefined ? {} : { diagnostics }),
     },
   };
 }
@@ -118,26 +121,109 @@ export function extractEvidenceQuotes(evidence: string): string[] {
 }
 
 /**
- * True when the candidate points at something that is actually in the file.
+ * Every quote and dash variant a model may use for the same source character.
  *
- * Quoted code must appear in the reviewed file, compared whitespace-insensitively
- * so indentation and trailing space never decide the outcome. When a candidate
- * offers no quoted code at all, it must at least reference the file it claims to
- * be talking about, otherwise there is nothing to verify and the claim is
- * unverifiable rather than merely terse.
+ * A model reproduces `""` as `''`, or `-` as `—`, without changing what the line
+ * says, and a claim that differs only in that way is still the same claim. This
+ * is not fuzzy matching: one character maps to one character, so every other
+ * character of a quoted line still has to appear in the file exactly as written.
  */
-export function isEvidenceAnchored(evidence: string, file: { content: string; path: string }): boolean {
+const QUOTE_VARIANTS = /[\u0022\u0027\u2018\u2019\u201C\u201D]/g;
+const DASH_VARIANTS = /[\u2010\u2013\u2014\u2212]/g;
+
+/**
+ * The canonical form evidence is compared in: indentation never decides the
+ * outcome, and neither does the typography a model happens to emit.
+ */
+export function normaliseEvidenceText(text: string): string {
+  return collapseWhitespace(text).replace(QUOTE_VARIANTS, '"').replace(DASH_VARIANTS, "-");
+}
+
+/**
+ * The terminators a model may end an excerpt with.
+ *
+ * A model that quotes one line out of a multi-line expression regularly closes
+ * the excerpt with `;` even though the source line ends in `,` (or the reverse).
+ * That final character is the model punctuating its quotation, not a claim about
+ * the code — the same claim either way. The swap is confined to that one
+ * position: a `;` or `,` anywhere else in the quote still has to appear in the
+ * file exactly as written, so a change inside the quoted code cannot hide behind
+ * it. This is not fuzzy matching. No length guard is needed either: the extractor
+ * drops quotes shorter than `MIN_TEXT_LENGTH.evidence`, so a lone terminator can
+ * never be swapped into a match.
+ */
+const STATEMENT_TERMINATORS: readonly string[] = [";", ","];
+
+/**
+ * The canonical form of a quote, plus the same quote with the counterpart
+ * terminator at its end. A quote that does not end in a terminator has exactly
+ * one form, which is the quote itself.
+ */
+function evidenceQuoteForms(normalisedQuote: string): readonly string[] {
+  const last = normalisedQuote.slice(-1);
+  if (!STATEMENT_TERMINATORS.includes(last)) return [normalisedQuote];
+
+  const counterpart = STATEMENT_TERMINATORS.find((terminator) => terminator !== last);
+  if (counterpart === undefined) return [normalisedQuote];
+
+  return [normalisedQuote, normalisedQuote.slice(0, -1) + counterpart];
+}
+
+/** What the evidence gate compared, with the outcome of each comparison. */
+export interface EvidenceComparison {
+  /** The quotes treated as claims about the source. Empty when nothing usable was quoted. */
+  quotes: string[];
+  /** Per quote, in the same order: does the reviewed file contain it. */
+  quotesFound: boolean[];
+  /** The gate's verdict. */
+  anchored: boolean;
+  /** True when no quote was usable, so the file reference is what was checked. */
+  usedFileReference: boolean;
+  /** The file the comparison ran against, and how much of it there was. */
+  comparedFile: string;
+  comparedChars: number;
+}
+
+/**
+ * The evidence comparison itself.
+ *
+ * This is the single implementation both the gate and the rejection
+ * diagnostics use: a rejection that reported a different comparison than the one
+ * that decided it would be worse than no diagnostics at all.
+ */
+export function compareEvidence(evidence: string, file: { content: string; path: string }): EvidenceComparison {
   const quotes = extractEvidenceQuotes(evidence);
+  const haystack = normaliseEvidenceText(file.content);
+  const quotesFound = quotes.map((quote) =>
+    evidenceQuoteForms(normaliseEvidenceText(quote)).some((form) => haystack.includes(form)),
+  );
+  const compared = { comparedFile: file.path, comparedChars: file.content.length };
 
   if (quotes.length > 0) {
-    const haystack = collapseWhitespace(file.content);
-    return quotes.some((quote) => haystack.includes(collapseWhitespace(quote)));
+    return { quotes, quotesFound, anchored: quotesFound.some(Boolean), usedFileReference: false, ...compared };
   }
 
-  const normalised = collapseWhitespace(evidence);
-  if (normalised === "") return false;
+  const normalised = normaliseEvidenceText(evidence);
   const fileName = file.path.split("/").pop() ?? file.path;
-  return normalised.includes(file.path) || (fileName !== "" && normalised.includes(fileName));
+  const anchored =
+    normalised !== "" && (normalised.includes(file.path) || (fileName !== "" && normalised.includes(fileName)));
+
+  return { quotes, quotesFound, anchored, usedFileReference: true, ...compared };
+}
+
+/**
+ * True when the candidate points at something that is actually in the file.
+ *
+ * Quoted code must appear in the reviewed file, compared in the canonical form
+ * `normaliseEvidenceText` defines: indentation and trailing space never decide the
+ * outcome, and neither does a quote, a dash, or the statement terminator at the
+ * end of an excerpt that the model typed differently from the file. When a
+ * candidate offers no quoted code at all, it must at least reference
+ * the file it claims to be talking about, otherwise there is nothing to verify and
+ * the claim is unverifiable rather than merely terse.
+ */
+export function isEvidenceAnchored(evidence: string, file: { content: string; path: string }): boolean {
+  return compareEvidence(evidence, file).anchored;
 }
 
 /**
@@ -176,6 +262,22 @@ export function validateCandidate(
   const fix = asText(candidate.fix);
 
   const summary = { file: asText(candidate.file), line: candidate.line, title };
+
+  // The candidate's own claim travels with every rejection, so a dropped finding
+  // can be explained from the report without replaying the review. It is only
+  // recorded: no field here is read by any check.
+  const baseDiagnostics: RejectionDiagnostics = {
+    ...(evidence === "" ? {} : { evidence }),
+    axis: asText(candidate.axis),
+    severity: asText(candidate.severity),
+    confidence: candidate.confidence,
+  };
+  const reject = (
+    target: { file: string; line: number; title: string },
+    reason: RejectionReason,
+    detail: string,
+    extra?: RejectionDiagnostics,
+  ): ValidationOutcome => rejectOutcome(target, reason, detail, { ...baseDiagnostics, ...extra });
 
   // 1. Shape. A candidate missing a required field cannot be repaired into a
   //    finding, because inventing the missing text is exactly what we forbid.
@@ -277,8 +379,14 @@ export function validateCandidate(
   const resolvedSeverity: ReviewSeverity = resolveSeverity(severity, confidence);
 
   // 8. Evidence anchoring. The last check and the most important one.
-  if (!isEvidenceAnchored(evidence, file)) {
-    return reject(summary, "evidence-not-in-source", "the quoted evidence does not appear in the reviewed file");
+  const comparison = compareEvidence(evidence, file);
+  if (!comparison.anchored) {
+    return reject(summary, "evidence-not-in-source", "the quoted evidence does not appear in the reviewed file", {
+      quotes: comparison.quotes,
+      quotesFound: comparison.quotesFound,
+      compared: { file: comparison.comparedFile, chars: comparison.comparedChars },
+      usedFileReference: comparison.usedFileReference,
+    });
   }
 
   const finding: ReviewFinding = {

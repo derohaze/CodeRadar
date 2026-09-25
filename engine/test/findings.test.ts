@@ -25,7 +25,40 @@ const SOURCE = {
   // Twenty lines, so an over-wide anchor is rejected for its width rather than
   // for running past the end of the file.
   "src/long.ts": Array.from({ length: 20 }, (_value, index) => `const value${index} = ${index};`).join("\n"),
+  // Real model output against the ai-review fixture: the file line carries a
+  // double-quoted string literal and the model reproduced it with single quotes.
+  // The claim was dropped as evidence-not-in-source when only whitespace was
+  // normalised, and it is true: the line is otherwise identical.
+  "src/profile.ts": [
+    "export function card(row: UserRow): Card {",
+    "  return {",
+    '    plan: row.plan_code.replace(/^PLAN_/, ""),',
+    "  };",
+    "}",
+  ].join("\n"),
+  // The same defect quoted with an em dash where the file has a hyphen.
+  "src/limits.ts": ["const WINDOW_MS = 60_000 - 1;", "export { WINDOW_MS };"].join("\n"),
+  // Real model output against the ai-review fixture: the model joined three lines
+  // of the object literal into one excerpt and closed it with `;` where the source
+  // line ends in `,`. Reproduced from run14: 113 characters on both sides, exactly
+  // one differing position, the last one. Everything else — including the newlines
+  // the model replaced with spaces — matched after whitespace collapsing.
+  "src/profile-card.ts": [
+    "export function buildProfileCard(user: UserRow): ProfileCard {",
+    "  return {",
+    "    displayName: user.display_name,",
+    "    city: user.address.city,",
+    "    country: user.address.country.toUpperCase(),",
+    '    plan: user.plan_code.replace(/^PLAN_/, ""),',
+    "  };",
+    "}",
+  ].join("\n"),
 };
+
+/** The run14 evidence, verbatim: a three-line excerpt closed with `;`. */
+const RUN14_EVIDENCE =
+  "Trigger: user.address is null or user.plan_code is null. Wrong result: TypeError. " +
+  'Code: lines 27\u201129: `city: user.address.city, country: user.address.country.toUpperCase(), plan: user.plan_code.replace(/^PLAN_/, "");`';
 
 function indexOf(files: Record<string, string>) {
   return createSourceIndex(Object.entries(files).map(([path, content]) => createSourceFile(path, content)));
@@ -226,6 +259,110 @@ describe("validateCandidate", () => {
 
     expect(outcome.ok).toBe(true);
   });
+
+  it("accepts a true claim whose quote character differs from the file", () => {
+    // Verbatim from a live run: the file line is
+    // `plan: row.plan_code.replace(/^PLAN_/, ""),` and the model quoted it with
+    // `''`. The code is identical, so the claim has to survive.
+    const outcome = validateCandidate(
+      candidateOf({
+        file: "src/profile.ts",
+        line: 3,
+        title: "Null plan_code dereference throws on an account that was never billed",
+        problem: "The schema declares plan_code as nullable, and this call dereferences it without a guard.",
+        why: "An account that has never been billed has a null plan_code, so the call is on undefined.",
+        impact: "The account page throws instead of rendering for every account that was never billed.",
+        evidence: `Code: "plan: row.plan_code.replace(/^PLAN_/, ''),"`,
+        fix: "Guard plan_code before calling replace, or default it to a starter plan.",
+      }),
+      index,
+      { origin: "ai" },
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.finding.location.file).toBe("src/profile.ts");
+  });
+
+  it("still rejects invented code, and records the comparison that rejected it", () => {
+    // The control: a repaired line that the model could plausibly write and the
+    // file does not contain. Canonicalising quotes must not rescue it.
+    const outcome = validateCandidate(
+      candidateOf({
+        file: "src/profile.ts",
+        line: 3,
+        evidence: `Code: "plan: row.plan_code?.replace(/^PLAN_/, "") ?? "STARTER","`,
+      }),
+      index,
+      { origin: "ai" },
+    );
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.rejected.reason).toBe("evidence-not-in-source");
+    expect(outcome.rejected.diagnostics?.quotesFound?.every((found) => found === false)).toBe(true);
+  });
+
+  it("accepts a true claim whose excerpt ends with the other statement terminator", () => {
+    // Verbatim from run14. The source line ends in `,` and the model closed its
+    // excerpt with `;`, which is the model punctuating the quotation rather than
+    // claiming anything different about the code.
+    const outcome = validateCandidate(
+      candidateOf({
+        file: "src/profile-card.ts",
+        line: 4,
+        title: "Missing null checks for address and plan_code cause runtime TypeError",
+        problem: "The schema declares address and plan_code as nullable and both are dereferenced here.",
+        why: "An account created by the mobile client has no address until onboarding completes.",
+        impact: "The account page throws instead of rendering for every account without an address.",
+        evidence: RUN14_EVIDENCE,
+        fix: "Guard both nullable columns before dereferencing them, or default the card fields.",
+      }),
+      index,
+      { origin: "ai" },
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.finding.location.file).toBe("src/profile-card.ts");
+  });
+
+  it("still rejects the run14 excerpt once one character inside the code differs", () => {
+    // Same shape and same terminator, but `country` became `countryCode`. Swapping
+    // the terminator must not turn a changed claim into an accepted one.
+    const outcome = validateCandidate(
+      candidateOf({
+        file: "src/profile-card.ts",
+        line: 4,
+        evidence: RUN14_EVIDENCE.replace("user.address.country.", "user.address.countryCode."),
+      }),
+      index,
+      { origin: "ai" },
+    );
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.rejected.reason).toBe("evidence-not-in-source");
+  });
+
+  it("rejects a terminator the model moved to the middle of the excerpt", () => {
+    // The run14 excerpt with the first joining comma typed as `;`, and its end left
+    // exactly as the file has it. Only the final position is the model's
+    // punctuation, so a `;` in the middle is a misquote and has to fail.
+    const outcome = validateCandidate(
+      candidateOf({
+        file: "src/profile-card.ts",
+        line: 4,
+        evidence: RUN14_EVIDENCE.replace("user.address.city, country", "user.address.city; country"),
+      }),
+      index,
+      { origin: "ai" },
+    );
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.rejected.reason).toBe("evidence-not-in-source");
+  });
 });
 
 describe("isEvidenceAnchored", () => {
@@ -245,6 +382,37 @@ describe("isEvidenceAnchored", () => {
 
   it("rejects prose that names nothing verifiable", () => {
     expect(isEvidenceAnchored("this is clearly wrong", file)).toBe(false);
+  });
+
+  it("accepts a quote whose string literal uses the other quote character", () => {
+    const profile = createSourceFile("src/profile.ts", SOURCE["src/profile.ts"]);
+
+    expect(isEvidenceAnchored(`Code: "plan: row.plan_code.replace(/^PLAN_/, ''),"`, profile)).toBe(true);
+  });
+
+  it("accepts a quote whose dash the model typed differently, and nothing more", () => {
+    const limits = createSourceFile("src/limits.ts", SOURCE["src/limits.ts"]);
+
+    // Only the dash differs from the file, so the claim is the same claim.
+    expect(isEvidenceAnchored("see `const WINDOW_MS = 60_000 \u2014 1;` for the window", limits)).toBe(true);
+    // A different value is a different claim, whatever the typography.
+    expect(isEvidenceAnchored("see `const WINDOW_MS = 60_000 \u2014 2;` for the window", limits)).toBe(false);
+  });
+
+  it("still rejects a quote the file does not contain", () => {
+    const profile = createSourceFile("src/profile.ts", SOURCE["src/profile.ts"]);
+
+    expect(isEvidenceAnchored(`Code: "plan: row.plan_code?.replace(/^PLAN_/, "") ?? "STARTER","`, profile)).toBe(
+      false,
+    );
+  });
+
+  it("accepts an excerpt ending with the counterpart terminator, and nothing more", () => {
+    // The file line is `return items[i];`, so a model closing its excerpt with a
+    // comma is quoting the same code.
+    expect(isEvidenceAnchored("see `return items[i],` for the read", file)).toBe(true);
+    // A different expression is a different claim, whatever its terminator.
+    expect(isEvidenceAnchored("see `return items[x],` for the read", file)).toBe(false);
   });
 });
 

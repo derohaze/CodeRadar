@@ -44,4 +44,10 @@ CODEX.md
 .agents
 .claude
 .freebuff
+# docs/ is local scratch, except the README's screenshots: those are part of the
+documentation and the README embeds them by path. A parent directory cannot be
+re-included through a child, so the directory itself is un-ignored first.
 docs
+!docs/
+docs/*
+!docs/screenshots/

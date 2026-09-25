@@ -77,6 +77,32 @@ export interface ReviewFinding {
   detector?: string;
 }
 
+/**
+ * What a rejection decided on, recorded so a dropped candidate can be explained
+ * from the report alone.
+ *
+ * Rejections used to keep only a reason, which made "the model found nothing"
+ * and "the model's claim did not survive the bar" indistinguishable — the two
+ * need opposite responses. Nothing here changes what is accepted: the fields are
+ * the inputs to the decision and the outcome of the comparison it ran.
+ */
+export interface RejectionDiagnostics {
+  /** The candidate's own claim, verbatim, before any interpretation. */
+  evidence?: string;
+  /** What was treated as a claim about the source: the quotes the extractor found. */
+  quotes?: string[];
+  /** The comparison the evidence gate ran, per quote: whether the file contains it. */
+  quotesFound?: boolean[];
+  /** The file the gate compared against, and how much of it there was. */
+  compared?: { file: string; chars: number };
+  /** True when nothing usable was quoted, so a file reference decided instead. */
+  usedFileReference?: boolean;
+  /** As the candidate stated them, before normalisation. */
+  axis?: string;
+  severity?: string;
+  confidence?: number;
+}
+
 /** Why a candidate never became a finding. Kept for observability, not for UI. */
 export interface RejectedCandidate {
   file: string;
@@ -86,6 +112,8 @@ export interface RejectedCandidate {
   reason: RejectionReason;
   /** Human-readable detail, safe to log. */
   detail: string;
+  /** The claim and the comparison behind the rejection. */
+  diagnostics?: RejectionDiagnostics;
 }
 
 export type RejectionReason =
