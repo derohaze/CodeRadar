@@ -93,6 +93,8 @@ engine/                    the review engine (TypeScript, no runtime dependencie
   src/adapters/            node filesystem and git
   src/node/                settings, providers, the review service, the local API
   src/cli.ts               `bun run review <path>`
+  src/eval/                scores a saved run against a fixture's ground truth
+  scripts/score-review.ts  `bun run score <run.json>`
   prompts/                 the review policy and reviewer persona, as markdown (canonical)
   test/                    fixtures with planted defects, and the suite that pins them
 frontend/                  Electron + React desktop app
@@ -217,8 +219,8 @@ clear.
 ## Testing
 
 ```bash
-cd engine   && bun run typecheck && bun test    # 180 tests
-cd frontend && bun run test                     # 69 tests
+cd engine   && bun run typecheck && bun test    # 197 tests
+cd frontend && bun run test                     # 72 tests
 ```
 
 The engine suite covers the pipeline, the repository index, the settings store, and the local API
@@ -226,6 +228,12 @@ contract end-to-end — including the security envelope, which is tested against
 finding validator is pinned by regression tests taken from real model output, including the three
 ways a model can write a true claim differently from the file (a quote character, a dash, and the
 statement terminator at the end of an excerpt) and the controls that must stay rejected.
+
+`engine/test/fixtures/ai-review` is the accuracy fixture: a small repository with planted defects
+(`D1`-`D9`) and code written to look wrong but correct (`C1`-`C10`), both recorded in
+`GROUND_TRUTH.md`. `bun run score <run.json>` scores any saved run against those tables, so a run
+says not only how many findings it kept but which defects it surfaced and which claims nothing
+supports. The GUI smoke test scores a live run with the same scorer.
 
 ## Security model
 

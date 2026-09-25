@@ -1,13 +1,21 @@
 import { motion } from "framer-motion";
 import { CheckCircle2 } from "lucide-react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import type { Finding } from "@/entities/finding/model/types";
 import { buildApprovalQueue } from "@/entities/finding/lib/approval-queue";
 import { orderFindingsByDecisionPriority } from "@/entities/finding/lib/finding-triage";
 import { getRemediationStatusLabel, getRemediationStatusTone } from "@/entities/finding/lib/remediation-status";
+import {
+  formatRejectedLocation,
+  getRejectionExplanation,
+  getRejectionReasonLabel,
+  groupRejectedCandidates,
+} from "@/entities/finding/lib/rejected-candidate";
+import type { RejectedCandidateGroup } from "@/entities/finding/lib/rejected-candidate";
 import type { SessionAnnotation } from "@/entities/session/model/types";
 import { SeverityBadge } from "@/entities/finding/ui/SeverityBadge";
-import type { ScanSessionDetail } from "@/shared/api/security";
+import type { RejectedCandidateSummary, ScanSessionDetail } from "@/shared/api/security";
 import { toAnalystCopy } from "@/shared/lib/analyst-copy";
 import { CopyButton } from "@/shared/ui/CopyButton";
 
@@ -27,6 +35,9 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
   const orderedValidatedFindings = orderFindingsByDecisionPriority(session.findings);
   const filteredCandidateFindings = dedupeCandidateFindings(orderedValidatedFindings, session.candidateFindings);
   const hasCandidateFindings = filteredCandidateFindings.length > 0;
+  const rejectedCandidates = session.rejectedCandidates ?? [];
+  const rejectedGroups = groupRejectedCandidates(rejectedCandidates);
+  const hasRejectedCandidates = rejectedCandidates.length > 0;
   const approvalQueue = buildApprovalQueue(orderedValidatedFindings);
   const approvalQueuedFindingIds = new Set(approvalQueue.map((item) => item.findingId));
   const surfacedValidatedFindings = orderedValidatedFindings.filter((finding) => !approvalQueuedFindingIds.has(finding.id));
@@ -36,7 +47,9 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
   const scoreExplanation = buildScoreExplanation(session, {
     activeValidatedCount,
     approvalQueueCount: approvalQueue.length,
-    candidateCount: filteredCandidateFindings.length,
+    // The count has to agree with the rows the screen shows below it, and the
+    // dropped candidates are the ones it shows.
+    candidateCount: rejectedCandidates.length,
   });
   const showWorkflowDetails = hasMeaningfulWorkflowDetails(session);
   const showTechnicalSignals = hasMeaningfulTechnicalSignals(session);
@@ -135,7 +148,7 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
                 <ScoreIssueChip label="Confirmed issues" value={activeValidatedCount} tone="high" />
                 <ScoreIssueChip label="Review queue" value={approvalQueue.length} tone="medium" />
-                <ScoreIssueChip label="Candidates" value={filteredCandidateFindings.length} tone="low" />
+                <ScoreIssueChip label="Dropped candidates" value={rejectedCandidates.length} tone="low" />
               </div>
             </div>
           </div>
@@ -434,6 +447,10 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
             groups={groupCandidateFindings(filteredCandidateFindings)}
             onSelectFinding={onSelectFinding}
           />
+        )}
+
+        {hasRejectedCandidates && (
+          <RejectedCandidatesCard candidates={rejectedCandidates} groups={rejectedGroups} />
         )}
 
         {surfacedValidatedFindings.length > 0 && (
@@ -965,6 +982,168 @@ function groupCandidateFindings(findings: Finding[]): CandidateGroup[] {
     });
   }
   return Array.from(groups.values());
+}
+
+/**
+ * What the review bar dropped, and why.
+ *
+ * A review that reports nothing looks identical to a review that found nothing,
+ * and the two need opposite responses. This card is the difference: every dropped
+ * candidate is listed with the reason, the evidence it submitted, and the
+ * comparison that refused it. Nothing here is presented as a defect.
+ */
+function RejectedCandidatesCard({
+  candidates,
+  groups,
+}: {
+  candidates: RejectedCandidateSummary[];
+  groups: RejectedCandidateGroup[];
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border bg-card" style={{ borderColor: "hsl(var(--border-soft))" }}>
+      <div className="px-5 pb-3 pt-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-txt-primary">Rejected candidates</h3>
+            <p className="mt-1 text-xs uppercase tracking-[0.16em] text-txt-tertiary">Dropped by the review bar</p>
+          </div>
+          <span className="text-xs font-medium uppercase tracking-[0.16em] text-txt-tertiary">
+            {candidates.length} dropped
+          </span>
+        </div>
+        <p className="mt-2 text-sm leading-6 text-txt-secondary">
+          None of these is a reported defect. Each row says why it was not, so a refused claim is not mistaken for a
+          defect the review never saw.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {groups.map((group) => (
+            <span
+              key={group.classification}
+              className="rounded-md bg-muted px-2 py-1 text-[11px] text-txt-secondary"
+            >
+              {group.shortLabel} {group.candidates.length}
+            </span>
+          ))}
+        </div>
+      </div>
+      {groups.map((group) => (
+        <div key={group.classification} className="border-t" style={{ borderColor: "hsl(var(--border-soft))" }}>
+          <p className="px-5 pb-1 pt-3 text-[10px] font-medium uppercase tracking-[0.16em] text-txt-tertiary">
+            {group.heading}
+          </p>
+          <div className="divide-y" style={{ borderColor: "hsl(var(--border-soft))" }}>
+            {group.candidates.map((candidate) => (
+              <RejectedCandidateRow key={`${candidate.file}:${candidate.line}:${candidate.title}`} candidate={candidate} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * One dropped candidate: the reason at a glance, the comparison on demand.
+ *
+ * Collapsed by default, because the detail is only worth reading once the reason
+ * has made a reviewer ask what happened.
+ */
+function RejectedCandidateRow({ candidate }: { candidate: RejectedCandidateSummary }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="px-5 py-3">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-start justify-between gap-3 text-left"
+      >
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium text-txt-primary">{candidate.title}</span>
+          <span className="mt-1 block font-mono text-xs text-txt-tertiary">{formatRejectedLocation(candidate)}</span>
+        </span>
+        <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-[11px] text-txt-secondary">
+          {getRejectionReasonLabel(candidate.reason)}
+        </span>
+      </button>
+      {expanded && <RejectionDetail candidate={candidate} />}
+    </div>
+  );
+}
+
+function RejectionDetail({ candidate }: { candidate: RejectedCandidateSummary }) {
+  const comparison = candidate.diagnostics;
+
+  return (
+    <div className="mt-3 space-y-3 rounded-lg border bg-[#f4f4f5] px-4 py-3" style={{ borderColor: "hsl(var(--border-soft))" }}>
+      <div>
+        <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-txt-tertiary">Why it was dropped</p>
+        <p className="mt-1 text-sm leading-6 text-txt-primary">{getRejectionExplanation(candidate.reason)}</p>
+        <p className="mt-1 font-mono text-xs text-txt-secondary">{candidate.detail}</p>
+      </div>
+
+      {comparison !== null && (
+        <>
+          <div>
+            <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-txt-tertiary">Evidence submitted</p>
+            <p className="mt-1 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-txt-secondary">
+              {comparison.evidence === null || comparison.evidence.trim() === ""
+                ? "No evidence text was submitted."
+                : comparison.evidence}
+            </p>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-txt-tertiary">Quotes checked</p>
+            {comparison.quotes.length > 0 ? (
+              <ul className="mt-1 space-y-1.5">
+                {comparison.quotes.map((quote, index) => (
+                  <li key={`${quote}-${index}`} className="text-xs leading-5 text-txt-secondary">
+                    <span className="font-mono break-words text-txt-primary">{quote}</span>
+                    <span className="mt-0.5 block">
+                      {comparison.quotesFound[index] === true
+                        ? `found in ${comparison.comparedFile ?? "the reviewed file"}`
+                        : `not found in ${comparison.comparedFile ?? "the reviewed file"}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              // Diagnostics are only attached by an evidence rejection, so this
+              // comparison is always the failed one: no quote was usable and the
+              // evidence did not name the file either.
+              <p className="mt-1 text-xs leading-5 text-txt-secondary">
+                No quoted code was submitted, and the evidence does not name
+                {` ${comparison.comparedFile ?? "the reviewed file"}, `}
+                so there was nothing left to verify.
+              </p>
+            )}
+          </div>
+
+          {comparison.comparedFile !== null && (
+            <p className="text-xs text-txt-tertiary">
+              Compared against {comparison.comparedFile}
+              {comparison.comparedChars === null ? "." : ` (${comparison.comparedChars} characters).`}
+            </p>
+          )}
+
+          <p className="text-xs text-txt-tertiary">
+            Submitted as {formatSubmittedComparison(comparison)}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The claim's own axis, severity, and confidence, as the model stated them. */
+function formatSubmittedComparison(comparison: NonNullable<RejectedCandidateSummary["diagnostics"]>): string {
+  const parts: string[] = [];
+  if (comparison.axis !== null && comparison.axis !== "") parts.push(comparison.axis);
+  if (comparison.severity !== null && comparison.severity !== "") parts.push(comparison.severity);
+  if (comparison.confidence !== null) parts.push(`confidence ${comparison.confidence}%`);
+  return parts.length === 0 ? "no axis, severity, or confidence" : parts.join(" / ");
 }
 
 function CandidateFindingsCard({

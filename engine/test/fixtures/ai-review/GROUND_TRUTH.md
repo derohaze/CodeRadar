@@ -19,6 +19,17 @@ scored against this list; it was written before any review was run.
 | D5 | `src/report-query.ts` | `searchByDevice` concatenates `term` into SQL — SQL injection. | high / critical |
 | D6 | `src/upload-handler.ts` | the `catch` responds `201` with a fabricated id, reporting a failed upload as a success; the order is never marked reconciled. | high |
 | D7 | `src/cart.ts` | `applyQuantityCap` mutates the caller's array in place, which the module doc says callers rely on not happening. | medium / low |
+| D8 | `src/retry-policy.ts` | `withRetry` returns `undefined as unknown as T` on the final failed attempt (line 25), while the module doc states the contract is that it returns the value or throws the last failure. Every caller is written against that contract, so a failure arrives as a silent `undefined` instead of an error. | high |
+| D9 | `src/refunds.ts` | `refundOrder` guards with `amountCents <= order.totalCents` (line 32) instead of against the amount still refundable, which the module doc defines as the captured total minus everything already refunded. The amount already refunded is read on line 30 and then never used in the guard, so an order can be refunded past its captured total across instalments. | critical / high |
+
+### How D8 and D9 were established
+
+The first seven defects were written with the fixture. D8 and D9 were found in a
+later pass, after live reviews surfaced those two files, so their provenance is
+recorded here rather than assumed: both were confirmed by reading the code against
+the contract stated in its own doc comment, not from a model's claim, and neither
+depends on provider output to be true. A reviewer accepting them on a model's word
+would be doing the opposite of what this fixture is for.
 
 Any of these may legitimately be reported once. Reporting the same defect twice,
 or at a line range that does not contain it, does not count as a second find.
@@ -42,6 +53,43 @@ the right lines. Severity is recorded for information only.
 | C7 | `src/db.ts`, `src/http.ts` | Declare interfaces only, no runtime code. | Nothing to find. |
 | C8 | `src/upload-handler.ts` | Rejects oversized bodies with `413` before doing work. | An intentional guard, not a truncated-handling bug. |
 | C9 | `src/session-store.ts` | `purgeExpired` deletes in a loop. | The loop is sequential with `await`; correct at this scale. |
+| C10 | `src/retry-policy.ts` | `throw lastError;` after the retry loop (line 31) reads as unreachable, and a review reported it as such. | It is reachable: `maxAttempts < 1` skips the loop entirely and reaches the throw. The line is reported here because "unreachable" is the wrong claim, not because the code is wrong. |
+
+## Negative controls in the `../clean` fixture
+
+The controls above live in this fixture. The `../clean` fixture is the other half
+of the same idea and is versioned with the engine: a review of it must produce no
+finding at all. `engine/test/fixtures/clean/src/contracts.ts` holds constructs that
+each invite a specific wrong comment:
+
+| looks like | why it is correct |
+| ---------- | ----------------- |
+| In-place mutation of a caller's array (the same shape as D7) | The doc comment states the caller renders and paginates from that instance, so the mutation is the contract. |
+| A missing inline permission check | Authorization is delegated to `assertSameDevice`, so no caller can forget it. |
+| An unawaited async call | Fire-and-forget by contract: the batch is rebuilt nightly from the source of truth, and the rejection is handled in the call itself. |
+| A retry loop with a backoff | Bounded to three attempts, each awaited, and the delay is capped so a slow provider cannot outlive the caller's timeout. |
+| `<=` against a bound | The comparison is over an instant range, not a collection length, and `to` is the last instant of the window. |
+| An index access that looks unsafe | The empty case is guarded on the line above, and it is reachable for a filtered list. |
+| A nested ternary and a long line | It reads poorly. That is a preference, and the review bar does not report preferences. |
+
+## Coverage inventory
+
+Every file inside the reviewed scope, and whether this table covers it. A file in
+the scope with no row here is a gap in the evaluation, not a clean file.
+
+| file | reviewed | planted defect | expected negatives | covered here |
+| ---- | -------- | -------------- | ------------------ | ------------ |
+| `src/cart.ts` | yes | D7 | C5 | yes |
+| `src/db.ts` | yes | none | C7 | yes |
+| `src/http.ts` | yes | none | C7 | yes |
+| `src/notifications.ts` | yes | none | C2, C3, C4 | yes |
+| `src/orders-api.ts` | yes | D1 | C1 | yes |
+| `src/refunds.ts` | yes | D9 | none | yes |
+| `src/report-query.ts` | yes | D5 | C6 | yes |
+| `src/retry-policy.ts` | yes | D8 | C10 | yes |
+| `src/session-store.ts` | yes | D4 | C9 | yes |
+| `src/upload-handler.ts` | yes | D6 | C8 | yes |
+| `src/user-profile.ts` | yes | D2, D3 | none | yes |
 
 ## Out of scope
 

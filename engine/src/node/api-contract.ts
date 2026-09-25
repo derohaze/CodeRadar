@@ -12,8 +12,8 @@
  *   inventory, so those arrive as null or zero rather than as a plausible number.
  *   The screens already render "unavailable" for a null score.
  * - Nothing is invented to fill a slot. The engine's rejected candidates are
- *   surfaced as unconfirmed risks, because that is what they are, and are never
- *   dressed up as findings.
+ *   surfaced as unconfirmed risks and as `rejected_candidates`, because that is
+ *   what they are, and are never dressed up as findings.
  *
  * The legacy `decision_summary` block is deliberately omitted: the renderer
  * derives it from the base finding (`buildFindingDecisionSummary`), so shipping a
@@ -65,6 +65,43 @@ export interface WireFinding {
   remediation_notes: string[];
   attempted_strategy_ids: string[];
   decision_summary: null;
+}
+
+/**
+ * A candidate the review bar refused, as the reviewer needs to read it.
+ *
+ * This is a separate shape from `WireFinding` on purpose. A rejected candidate
+ * has no severity, no impact, and no fix — inventing those to fit the finding
+ * contract would present a refused claim as a finding, which is the one thing
+ * this boundary must never do. `reason` stays the engine's machine value so the
+ * renderer owns the wording and the grouping.
+ */
+export interface WireRejectedCandidate {
+  title: string;
+  file: string;
+  line: number;
+  line_end: number;
+  reason: string;
+  detail: string;
+  /**
+   * The comparison that produced the rejection, when the check recorded one.
+   * Only rejections decided by evidence carry it; the others are decided by a
+   * count, a field, or a location, where there is nothing to compare.
+   */
+  diagnostics: WireRejectionDiagnostics | null;
+}
+
+export interface WireRejectionDiagnostics {
+  evidence: string | null;
+  quotes: string[];
+  quotes_found: boolean[];
+  compared_file: string | null;
+  compared_chars: number | null;
+  used_file_reference: boolean;
+  /** As the model submitted them, before normalisation. */
+  axis: string | null;
+  severity: string | null;
+  confidence: number | null;
 }
 
 export interface WireAnalysisBrief {
@@ -140,7 +177,19 @@ export interface WireScanDetail {
   session: WireSession;
   issues: { critical: number; high: number; medium: number; low: number };
   findings: WireFinding[];
+  /**
+   * Always empty, and not the carrier for dropped candidates.
+   *
+   * The renderer types this field as a list of findings, so filling it from the
+   * report's rejections would mean inventing a severity, an impact and a fix for
+   * a claim that was refused. Dropped candidates travel in
+   * `rejected_candidates`, which has the shape they actually have.
+   */
   candidate_findings: never[];
+  /** Every candidate the review bar dropped, with the reason behind each one. */
+  rejected_candidates: WireRejectedCandidate[];
+  /** The engine's own rejection tally, by reason. */
+  rejections_by_reason: Record<string, number>;
   verdict: "safe" | "issues_found";
   completed_at: string | null;
   error_message: string | null;
@@ -424,13 +473,44 @@ export function buildWireSession(input: BuildSessionInput, report: ReviewReport 
   };
 }
 
+function toWireRejectedCandidate(candidate: RejectedCandidate): WireRejectedCandidate {
+  const lineEnd = Number.isFinite(candidate.lineEnd) ? Math.max(candidate.lineEnd, candidate.line) : candidate.line;
+  const diagnostics = candidate.diagnostics;
+
+  return {
+    title: candidate.title,
+    file: candidate.file,
+    line: candidate.line,
+    line_end: lineEnd,
+    reason: candidate.reason,
+    detail: candidate.detail,
+    diagnostics:
+      diagnostics === undefined
+        ? null
+        : {
+            evidence: diagnostics.evidence ?? null,
+            quotes: diagnostics.quotes ?? [],
+            quotes_found: diagnostics.quotesFound ?? [],
+            compared_file: diagnostics.compared?.file ?? null,
+            compared_chars: diagnostics.compared?.chars ?? null,
+            used_file_reference: diagnostics.usedFileReference === true,
+            axis: diagnostics.axis ?? null,
+            severity: diagnostics.severity ?? null,
+            confidence: diagnostics.confidence ?? null,
+          },
+  };
+}
+
 export function buildWireScanDetail(session: WireSession, report: ReviewReport | null, errorMessage: string | null): WireScanDetail {
   const findings = (report?.findings ?? []).map(toWireFinding);
+  const rejected = report?.rejected ?? [];
   return {
     session,
     issues: countSeverities(report?.findings ?? []),
     findings,
     candidate_findings: [],
+    rejected_candidates: rejected.map(toWireRejectedCandidate),
+    rejections_by_reason: report?.stats.rejectionsByReason ?? {},
     verdict: findings.length === 0 ? "safe" : "issues_found",
     completed_at: session.status === "completed" || session.status === "failed" ? session.updated_at : null,
     error_message: errorMessage,

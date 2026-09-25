@@ -327,6 +327,61 @@ describe("validateCandidate", () => {
     expect(outcome.finding.location.file).toBe("src/profile-card.ts");
   });
 
+  it("accepts a true excerpt the model wrapped in single quotes and escaped", () => {
+    // Verbatim from a live run (run19): the model wrapped the same three lines in
+    // single quotes and wrote the line breaks as literal `\n`. The code is there,
+    // so the claim is checkable and has to be checked rather than thrown away.
+    const outcome = validateCandidate(
+      candidateOf({
+        file: "src/profile-card.ts",
+        line: 4,
+        evidence:
+          "Trigger: user.address is null. Wrong result: TypeError. " +
+          'Quoted code: lines 27-30: \'city: user.address.city,\\n     country: user.address.country.toUpperCase(),\\n     plan: user.plan_code.replace(/^PLAN_/, ""),\'.',
+      }),
+      index,
+      { origin: "ai" },
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.finding.location.file).toBe("src/profile-card.ts");
+  });
+
+  it("still rejects a single-quoted excerpt once one character inside it differs", () => {
+    // The same quoting style, with `country` misspelled: recognising the
+    // delimiter must not soften what is inside it.
+    const outcome = validateCandidate(
+      candidateOf({
+        file: "src/profile-card.ts",
+        line: 4,
+        evidence:
+          'Code: \'country: user.address.countryCode.toUpperCase(), plan: user.plan_code.replace(/^PLAN_/, ""),\'.',
+      }),
+      index,
+      { origin: "ai" },
+    );
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.rejected.reason).toBe("evidence-not-in-source");
+  });
+
+  it("does not read an apostrophe in prose as a code excerpt", () => {
+    // Two apostrophes in a sentence are not a quotation. If they were treated as
+    // one, a candidate that names its file would be checked against prose instead
+    // of being anchored by the file reference it does name.
+    const outcome = validateCandidate(
+      candidateOf({
+        evidence: "the order's total isn't validated in src/app.ts before it is charged",
+      }),
+      index,
+      { origin: "ai" },
+    );
+
+    expect(outcome.ok).toBe(true);
+  });
+
   it("still rejects the run14 excerpt once one character inside the code differs", () => {
     // Same shape and same terminator, but `country` became `countryCode`. Swapping
     // the terminator must not turn a changed claim into an accepted one.

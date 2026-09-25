@@ -544,4 +544,27 @@ describe("the local review API scope controls", () => {
     const fastLimitations = fast.session.analysis_brief?.analysis_limitations ?? [];
     expect(fastLimitations.some((line: string) => line.includes("anchored to lines changed against main"))).toBe(true);
   });
+
+  it("carries the candidates the review bar dropped, with the reason behind each one", async () => {
+    const fast = await runWith("fast");
+
+    // A fast review drops the defect on the unchanged line at validation, so the
+    // response has to say which candidate went and why. Without this a reviewer
+    // sees a count and cannot tell a missed defect from a refused claim.
+    const dropped = fast.rejected_candidates;
+    expect(dropped.length).toBeGreaterThanOrEqual(1);
+    // The count on the session and the list are the same set, or the screen would
+    // show a number that no row explains.
+    expect(fast.session.candidate_findings_count).toBe(dropped.length);
+
+    const outsideChange = dropped.find((candidate) => candidate.reason === "anchor-outside-changed-lines");
+    expect(outsideChange).toBeDefined();
+    expect(outsideChange?.file.endsWith("paging.ts")).toBe(true);
+    expect(outsideChange?.title.length).toBeGreaterThan(0);
+    expect(outsideChange?.detail.length).toBeGreaterThan(0);
+    expect(outsideChange?.line_end).toBeGreaterThanOrEqual(outsideChange?.line ?? 0);
+
+    // The breakdown is the engine's own tally, not a second computation.
+    expect(fast.rejections_by_reason["anchor-outside-changed-lines"]).toBeGreaterThanOrEqual(1);
+  });
 });

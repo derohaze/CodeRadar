@@ -138,6 +138,7 @@ export function dedupeFindings(findings: readonly ReviewFinding[]): DedupeResult
     merged.push({
       file: loser.location.file,
       line: loser.location.line,
+      lineEnd: loser.location.lineEnd,
       title: loser.title,
       reason: "merged-duplicate",
       detail: `merged into ${winner.id} (${winner.title})`,

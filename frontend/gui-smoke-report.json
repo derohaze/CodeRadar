@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-25T01:06:40.132Z",
+  "ranAt": "2026-09-25T06:08:11.401Z",
   "model": {
     "baseUrl": "https://integrate.api.nvidia.com/v1",
     "model": "nvidia/nemotron-3-super-120b-a12b"
@@ -17,8 +17,8 @@
     },
     {
       "name": "Provider test connection (live call)",
-      "status": "FAIL",
-      "detail": "the provider never answered"
+      "status": "PASS",
+      "detail": "NVIDIA answered with nvidia/nemotron-3-super-120b-a12b."
     },
     {
       "name": "Provider saved through the GUI",
@@ -61,32 +61,282 @@
       "detail": "the detail panel quotes code from the file"
     },
     {
+      "name": "Second review starts from the finished review's screen",
+      "status": "PASS",
+      "detail": "a new review started with the previous results still the last screen, and nothing was refused"
+    },
+    {
       "name": "Single-file review stays scoped to the file",
-      "status": "FAIL",
-      "detail": "coverage reads \"9/9\" (one file), 1 finding(s) outside the selected file"
+      "status": "PASS",
+      "detail": "coverage reads \"1/1\" (one file), 0 finding(s) outside the selected file"
     },
     {
       "name": "Single-file review reports the file's defect",
       "status": "PASS",
-      "detail": "10 finding(s): 1 open, 9 queued, 0 candidate"
+      "detail": "1 finding(s): 0 open, 1 queued, 0 candidate"
     },
     {
       "name": "False positives: correct code yields 0 findings",
-      "status": "FAIL",
-      "detail": "unexpected findings: 2 (File | Open Folder… | Open File… | SECURITY SCORE — GREPTILE 5-POINT | AI score explanation | Current review state: 0 open finding(s), 2 queued approval item(s), 0 candidate finding(s). | Review coverage | 100% COVERED | 1 of 1 discovered file was read and reviewed. | Files reviewed: 1/1 | FRAMEWORK PROFILE | 0 route files and 0 auth files | 0 cross-file paths identified | 1 review items | SCORE RATIONALE | 0 open | Queue 2 item(s) - coverage 100 percent - candidate pressure 0 | POTENTIAL RISKS | No additional potential risk was surfaced beyond the validated queue | 1. Findings are anchored to lines changed against origin/main; the other files in scope were still reviewed in full. | 1. Apply the recommended fix for 2 findings and re-run the review. | Validated findings | OPEN FINDINGS ONLY | All validated findings in this session are already tracked in the review queue below)"
+      "status": "PASS",
+      "detail": "no finding was invented for correct code (3/3 reviewed)"
     },
     {
-      "name": "smoke run",
+      "name": "Git repository review",
+      "status": "PASS",
+      "detail": "both planted defects came back from a real repository the engine found its own root in: 2 finding(s) (src/paging.ts, src/sorting.ts), 3/3 reviewed, 0 candidate(s), 0 outside the selected scope"
+    },
+    {
+      "name": "Review mode changes scope (Fast vs Deep)",
+      "status": "PASS",
+      "detail": "Fast reviewed only the changed file and reported its defect (1 finding(s): src/paging.ts, 1/3 reviewed), while Deep reported 2 from the whole repository; anchoring note: true"
+    },
+    {
+      "name": "Preset changes the finding budget",
+      "status": "PASS",
+      "detail": "Safe mode returned 8 finding(s) where Balanced returned 10 for the same folder; the difference is visible as candidates (2 vs 0)"
+    },
+    {
+      "name": "Real AI accuracy against ground truth",
       "status": "FAIL",
-      "detail": "aborted: page.evaluate: Target page, context or browser has been closed"
+      "detail": "0/9 planted defects surfaced in 0 finding(s) with 0 candidate(s) dropped by the review bar; missed: D1, D2, D3, D4, D5, D6, D7, D8, D9; 0 finding(s) referenced code outside the selected scope"
+    },
+    {
+      "name": "Dropped candidates reach the app with their list",
+      "status": "PASS",
+      "detail": "no candidate was dropped in this run"
+    },
+    {
+      "name": "No finding on code the ground truth calls correct",
+      "status": "PASS",
+      "detail": "10 negative control(s) untouched"
+    },
+    {
+      "name": "No unsupported finding in the scored run",
+      "status": "PASS",
+      "detail": "every kept finding names a file the ground truth knows about"
+    },
+    {
+      "name": "No review was refused while another was claimed",
+      "status": "PASS",
+      "detail": "7 review(s) ran back to back in one app session with no 409"
     }
   ],
   "notes": [
     "provider key was already stored",
+    "review started: D:\\Haze\\CodeGuard\\engine\\test\\fixtures\\buggy (Balanced, Deep review)",
     "finding: engine/test/fixtures/buggy/src/collections.ts:18 Numeric array is sorted lexicographically (correctness)",
-    "results digest: File | Open Folder… | Open File… | The file exports a test fixture containing a fake API key for the purpose of testing a secret detector. The key is explicitly marked as fake and not a working key for any service, and the fixture is located in a test directory. No defects are found that clear the review bar. | SECURITY SCORE — GREPTILE 5-POINT | AI score explanation | The file exports a test fixture containing a fake API key for the purpose of testing a secret detector. The key is explicitly marked as fake and not a working key for any service, and the fixture is located in a test directory. No defects are found that clear the review bar. | Current review state: 1 open finding(s), 9 queued approval item(s), 0 candidate finding(s). | Review coverage | 100% COVERED | 9 of 9 discovered files were read and reviewed. | Files reviewed: 9/9 | FRAMEWORK PROFILE | 0 route files and 1 auth files | 0 cross-file paths identified | 9 review items | SCORE RATIONALE | 1 open | Queue 9 item(s) - coverage 100 percent - candidate pressure 0 | POTENTIAL RISKS | No additional potential risk was surfaced beyond the validated queue | 1. Findings are anchored to lines changed against origin/main; the other files in scope were still reviewed in full. | 1. Apply the recommended fix for 10 findings and re-run the review. | Validated findings",
-    "single-file digest: File | Open Folder… | Open File… | The file exports a test fixture containing a fake API key for the purpose of testing a secret detector. The key is explicitly marked as fake and not a working key for any service, and the fixture is located in a test directory. No defects are found that clear the review bar. | SECURITY SCORE — GREPTILE 5-POINT | AI score explanation | The file exports a test fixture containing a fake API key for the purpose of testing a secret detector. The key is explicitly marked as fake and not a working key for any service, and the fixture is located in a test directory. No defects are found that clear the review bar. | Current review state: 1 open finding(s), 9 queued approval item(s), 0 candidate finding(s). | Review coverage | 100% COVERED | 9 of 9 discovered files were read and reviewed. | Files reviewed: 9/9 | FRAMEWORK PROFILE | 0 route files and 1 auth files | 0 cross-file paths identified | 9 review items | SCORE RATIONALE | 1 open | Queue 9 item(s) - coverage 100 percent - candidate pressure 0 | POTENTIAL RISKS | No additional potential risk was surfaced beyond the validated queue | 1. Findings are anchored to lines changed against origin/main; the other files in scope were still reviewed in full. | 1. Apply the recommended fix for 10 findings and re-run the review. | Validated findings",
-    "renderer console error: Failed to load resource: the server responded with a status of 409 (Conflict)",
-    "renderer console error: [CodeRadar] API request failed {path: /scans, method: POST, status: 409, body: Object}"
-  ]
+    "results digest: File | Open Folder… | Open File… | 10 findings across 9 reviewed files: 1 critical, 8 high, 1 medium. Of 10 candidates, 0 were dropped by the review bar and 0 were duplicates. | SECURITY SCORE — GREPTILE 5-POINT | AI score explanation | 10 findings across 9 reviewed files: 1 critical, 8 high, 1 medium. Of 10 candidates, 0 were dropped by the review bar and 0 were duplicates. | Current review state: 1 open finding(s), 9 queued approval item(s), 0 candidate finding(s). | Review coverage | 100% COVERED | 9 of 9 discovered files were read and reviewed. | Files reviewed: 9/9 | FRAMEWORK PROFILE | 0 route files and 1 auth files | 0 cross-file paths identified | 9 review items | SCORE RATIONALE | 1 open | Queue 9 item(s) - coverage 100 percent - candidate pressure 0 | POTENTIAL RISKS | No additional potential risk was surfaced beyond the validated queue | 1. Apply the recommended fix for 10 findings and re-run the review. | Validated findings | OPEN FINDINGS ONLY",
+    "review started: D:\\Haze\\CodeGuard\\engine\\test\\fixtures\\buggy\\src\\render.ts (default preset, default mode)",
+    "single-file digest: File | Open Folder… | Open File… | 1 findings across 1 reviewed files: 1 high. Of 1 candidates, 0 were dropped by the review bar and 0 were duplicates. | SECURITY SCORE — GREPTILE 5-POINT | AI score explanation | 1 findings across 1 reviewed files: 1 high. Of 1 candidates, 0 were dropped by the review bar and 0 were duplicates. | Current review state: 0 open finding(s), 1 queued approval item(s), 0 candidate finding(s). | Review coverage | 100% COVERED | 1 of 1 discovered file was read and reviewed. | Files reviewed: 1/1 | FRAMEWORK PROFILE | 0 route files and 0 auth files | 0 cross-file paths identified | 1 review items | SCORE RATIONALE | 0 open | Queue 1 item(s) - coverage 100 percent - candidate pressure 0 | POTENTIAL RISKS | No additional potential risk was surfaced beyond the validated queue | 1. Apply the recommended fix for 1 finding and re-run the review. | Validated findings | OPEN FINDINGS ONLY",
+    "review started: D:\\Haze\\CodeGuard\\engine\\test\\fixtures\\clean (Balanced, Deep review)",
+    "review started: C:\\Users\\haze\\AppData\\Local\\Temp\\coderadar-gui-git-TyhyEq (Balanced, Deep review)",
+    "fixture repository digest: File | Open Folder… | Open File… | 2 findings across 3 reviewed files: 1 high, 1 medium. Of 2 candidates, 0 were dropped by the review bar and 0 were duplicates. | SECURITY SCORE — GREPTILE 5-POINT | AI score explanation | 2 findings across 3 reviewed files: 1 high, 1 medium. Of 2 candidates, 0 were dropped by the review bar and 0 were duplicates. | Current review state: 1 open finding(s), 1 queued approval item(s), 0 candidate finding(s). | Review coverage | 100% COVERED | 3 of 3 discovered files were read and reviewed. | Files reviewed: 3/3 | FRAMEWORK PROFILE | 0 route files and 0 auth files | 0 cross-file paths identified | 3 review items | SCORE RATIONALE | 1 open | Queue 1 item(s) - coverage 100 percent - candidate pressure 0 | POTENTIAL RISKS | No additional potential risk was surfaced beyond the validated queue | 1. Apply the recommended fix for 2 findings and re-run the review. | Validated findings | OPEN FINDINGS ONLY",
+    "review started: C:\\Users\\haze\\AppData\\Local\\Temp\\coderadar-gui-git-TyhyEq (Balanced, Fast review)",
+    "changed-only digest: File | Open Folder… | Open File… | 1 findings across 1 reviewed files: 1 high. Of 1 candidates, 0 were dropped by the review bar and 0 were duplicates. | SECURITY SCORE — GREPTILE 5-POINT | AI score explanation | 1 findings across 1 reviewed files: 1 high. Of 1 candidates, 0 were dropped by the review bar and 0 were duplicates. | Current review state: 0 open finding(s), 1 queued approval item(s), 0 candidate finding(s). | Review coverage | 33% COVERED | 1 of 3 discovered files were read and reviewed. | Files reviewed: 1/3 | FRAMEWORK PROFILE | 0 route files and 0 auth files | 0 cross-file paths identified | 1 review items | SCORE RATIONALE | 0 open | Queue 1 item(s) - coverage 33 percent - candidate pressure 0 | POTENTIAL RISKS | No additional potential risk was surfaced beyond the validated queue | 1. 1 of 3 discovered files were reviewed; the rest were outside the selected scope or beyond the review budget. | 2. Findings are anchored to lines changed against main; the other files in scope were still reviewed in full. | 1. Apply the recommended fix for 1 finding and re-run the review.",
+    "review started: D:\\Haze\\CodeGuard\\engine\\test\\fixtures\\buggy (Safe mode, Deep review)",
+    "safe mode digest: File | Open Folder… | Open File… | 8 findings across 9 reviewed files: 1 critical, 7 high. Of 10 candidates, 2 were dropped by the review bar and 0 were duplicates. | SECURITY SCORE — GREPTILE 5-POINT | AI score explanation | 8 findings across 9 reviewed files: 1 critical, 7 high. Of 10 candidates, 2 were dropped by the review bar and 0 were duplicates. | Score reductions recorded by the scorer: candidate pressure -2. | Current review state: 0 open finding(s), 8 queued approval item(s), 2 candidate finding(s). | Review coverage | 100% COVERED | 9 of 9 discovered files were read and reviewed. | Files reviewed: 9/9 | FRAMEWORK PROFILE | 0 route files and 1 auth files | 0 cross-file paths identified | 9 review items | SCORE RATIONALE | 0 open | Queue 8 item(s) - coverage 100 percent - candidate pressure 0 | POTENTIAL RISKS | 1. engine/test/fixtures/buggy/src/render.ts:8 — Markup is assigned from an unsanitised value (over finding cap: dropped by the cap of 8 findings) | 2. engine/test/fixtures/buggy/src/collections.ts:18 — Numeric array is sorted lexicographically (over finding cap: dropped by the cap of 8 findings) | 1. Apply the recommended fix for 8 findings and re-run the review.",
+    "review started: D:\\Haze\\CodeGuard\\engine\\test\\fixtures\\ai-review\\repo (Balanced, Deep review)",
+    "ground truth D1 MISSED src/orders-api.ts ",
+    "ground truth D2 MISSED src/user-profile.ts ",
+    "ground truth D3 MISSED src/user-profile.ts ",
+    "ground truth D4 MISSED src/session-store.ts ",
+    "ground truth D5 MISSED src/report-query.ts ",
+    "ground truth D6 MISSED src/upload-handler.ts ",
+    "ground truth D7 MISSED src/cart.ts ",
+    "ground truth D8 MISSED src/retry-policy.ts ",
+    "ground truth D9 MISSED src/refunds.ts ",
+    "ground truth totals: defects 0/9, TP=0 FP=0 FN=9, duplicate anchors 0",
+    "ground truth rejections: none",
+    "ground truth candidate reasons: no candidate reason was printed",
+    "ground truth digest: File | Open Folder… | Open File… | Reviewed 11 files and found no defect that cleared the review bar. | SECURITY SCORE — GREPTILE 5-POINT | AI score explanation | Reviewed 11 files and found no defect that cleared the review bar. | Review coverage | 100% COVERED | 11 of 11 discovered files were read and reviewed. | Files reviewed: 11/11 | FRAMEWORK PROFILE | 1 route files and 4 auth files | 0 cross-file paths identified | 11 review items | SCORE RATIONALE | 0 open | Queue 0 item(s) - coverage 100 percent - candidate pressure 0 | Validated findings",
+    "ground truth missed: D1 (src/orders-api.ts), D2 (src/user-profile.ts), D3 (src/user-profile.ts), D4 (src/session-store.ts), D5 (src/report-query.ts), D6 (src/upload-handler.ts), D7 (src/cart.ts), D8 (src/retry-policy.ts), D9 (src/refunds.ts)"
+  ],
+  "evaluation": {
+    "defects": [
+      {
+        "id": "D1",
+        "files": [
+          "src/orders-api.ts"
+        ],
+        "detected": false,
+        "anchors": []
+      },
+      {
+        "id": "D2",
+        "files": [
+          "src/user-profile.ts"
+        ],
+        "detected": false,
+        "anchors": []
+      },
+      {
+        "id": "D3",
+        "files": [
+          "src/user-profile.ts"
+        ],
+        "detected": false,
+        "anchors": []
+      },
+      {
+        "id": "D4",
+        "files": [
+          "src/session-store.ts"
+        ],
+        "detected": false,
+        "anchors": []
+      },
+      {
+        "id": "D5",
+        "files": [
+          "src/report-query.ts"
+        ],
+        "detected": false,
+        "anchors": []
+      },
+      {
+        "id": "D6",
+        "files": [
+          "src/upload-handler.ts"
+        ],
+        "detected": false,
+        "anchors": []
+      },
+      {
+        "id": "D7",
+        "files": [
+          "src/cart.ts"
+        ],
+        "detected": false,
+        "anchors": []
+      },
+      {
+        "id": "D8",
+        "files": [
+          "src/retry-policy.ts"
+        ],
+        "detected": false,
+        "anchors": []
+      },
+      {
+        "id": "D9",
+        "files": [
+          "src/refunds.ts"
+        ],
+        "detected": false,
+        "anchors": []
+      }
+    ],
+    "missed_defects": [
+      "D1",
+      "D2",
+      "D3",
+      "D4",
+      "D5",
+      "D6",
+      "D7",
+      "D8",
+      "D9"
+    ],
+    "negatives": [
+      {
+        "id": "C1",
+        "files": [
+          "src/orders-api.ts"
+        ],
+        "leaked": false,
+        "anchors": []
+      },
+      {
+        "id": "C2",
+        "files": [
+          "src/notifications.ts"
+        ],
+        "leaked": false,
+        "anchors": []
+      },
+      {
+        "id": "C3",
+        "files": [
+          "src/notifications.ts"
+        ],
+        "leaked": false,
+        "anchors": []
+      },
+      {
+        "id": "C4",
+        "files": [
+          "src/notifications.ts"
+        ],
+        "leaked": false,
+        "anchors": []
+      },
+      {
+        "id": "C5",
+        "files": [
+          "src/cart.ts"
+        ],
+        "leaked": false,
+        "anchors": []
+      },
+      {
+        "id": "C6",
+        "files": [
+          "src/report-query.ts"
+        ],
+        "leaked": false,
+        "anchors": []
+      },
+      {
+        "id": "C7",
+        "files": [
+          "src/db.ts",
+          "src/http.ts"
+        ],
+        "leaked": false,
+        "anchors": []
+      },
+      {
+        "id": "C8",
+        "files": [
+          "src/upload-handler.ts"
+        ],
+        "leaked": false,
+        "anchors": []
+      },
+      {
+        "id": "C9",
+        "files": [
+          "src/session-store.ts"
+        ],
+        "leaked": false,
+        "anchors": []
+      },
+      {
+        "id": "C10",
+        "files": [
+          "src/retry-policy.ts"
+        ],
+        "leaked": false,
+        "anchors": []
+      }
+    ],
+    "missed_negatives": [],
+    "rejection_breakdown": {},
+    "candidates": {
+      "produced": 0,
+      "kept": 0,
+      "rejected": 0,
+      "merged": 0
+    },
+    "totals": {
+      "plantedDefects": 9,
+      "detectedDefects": 0,
+      "truePositives": 0,
+      "unsupported": 0,
+      "falsePositiveOnNegatives": 0,
+      "falsePositives": 0,
+      "falseNegatives": 9,
+      "duplicateAnchors": 0
+    }
+  }
 }

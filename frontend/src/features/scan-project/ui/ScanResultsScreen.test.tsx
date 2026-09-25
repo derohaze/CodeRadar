@@ -67,6 +67,8 @@ describe("ScanResultsScreen", () => {
       verdict: "issues_found",
       findings: [queuedPatchFinding, verificationFinding],
       candidateFindings: [],
+      rejectedCandidates: [],
+      rejectionsByReason: {},
       issues: { critical: 0, high: 2, medium: 0, low: 0 },
       errorMessage: null,
       completedAt: null,
@@ -156,6 +158,8 @@ describe("ScanResultsScreen", () => {
       verdict: "safe",
       findings: [],
       candidateFindings: [],
+      rejectedCandidates: [],
+      rejectionsByReason: {},
       issues: { critical: 0, high: 0, medium: 0, low: 0 },
       errorMessage: null,
       completedAt: null,
@@ -240,5 +244,172 @@ describe("ScanResultsScreen", () => {
     expect(screen.getAllByText(/cross-file path evidence and runtime integration visibility were limited/i)).toHaveLength(1);
     expect(screen.getByText(/redis-backed cache boundaries were reviewed/i)).toBeInTheDocument();
     expect(screen.getByText(/probe malformed api input against monitor endpoints/i)).toBeInTheDocument();
+  });
+
+  it("explains every dropped candidate, distinguishing a refusal from a merge", () => {
+    const rejectedCandidates = [
+      {
+        title: "Missing null check on user.address",
+        file: "src/user-profile.ts",
+        line: 27,
+        lineEnd: 29,
+        reason: "evidence-not-in-source",
+        detail: "the quoted evidence does not appear in the reviewed file",
+        diagnostics: {
+          evidence: 'Code: lines 27-29: `city: user.address.city, plan: user.plan_code;`',
+          quotes: ["city: user.address.city, plan: user.plan_code;"],
+          quotesFound: [false],
+          comparedFile: "src/user-profile.ts",
+          comparedChars: 1060,
+          usedFileReference: false,
+          axis: "correctness",
+          severity: "high",
+          confidence: 92,
+        },
+      },
+      {
+        title: "Revocations are not awaited",
+        file: "src/session-store.ts",
+        line: 27,
+        lineEnd: 27,
+        reason: "evidence-not-in-source",
+        detail: "the quoted evidence does not appear in the reviewed file",
+        diagnostics: {
+          evidence: "the revocations never complete for this device",
+          quotes: [],
+          quotesFound: [],
+          comparedFile: "src/session-store.ts",
+          comparedChars: 812,
+          usedFileReference: true,
+          axis: "concurrency",
+          severity: "critical",
+          confidence: 95,
+        },
+      },
+      {
+        title: "applyQuantityCap mutates the caller's array",
+        file: "src/cart.ts",
+        line: 14,
+        lineEnd: 18,
+        reason: "merged-duplicate",
+        detail: "merged into f-1a2b3c4d (Cart is mutated in place)",
+        diagnostics: null,
+      },
+      {
+        title: "Search term reaches SQL without a parameter",
+        file: "src/report-query.ts",
+        line: 31,
+        lineEnd: 31,
+        reason: "over-finding-cap",
+        detail: "dropped by the cap of 15 findings",
+        diagnostics: null,
+      },
+    ];
+
+    const session = {
+      verdict: "safe",
+      findings: [],
+      candidateFindings: [],
+      rejectedCandidates,
+      rejectionsByReason: { "evidence-not-in-source": 2, "merged-duplicate": 1, "over-finding-cap": 1 },
+      issues: { critical: 0, high: 0, medium: 0, low: 0 },
+      errorMessage: null,
+      completedAt: null,
+      session: {
+        id: "session-3",
+        title: "Scan ai-review fixture",
+        repo: "repo",
+        time: "2026-09-25 08:00 UTC",
+        unread: false,
+        status: "completed",
+        preview: "preview",
+        scanMode: "deep",
+        criticalCount: 0,
+        warningCount: 0,
+        findingsCount: 0,
+        candidateFindingsCount: 4,
+        progress: 100,
+        phaseProgress: 100,
+        progressMessage: "Completed",
+        currentPhase: "Completed",
+        elapsedSeconds: 61,
+        progressLogs: [],
+        progressCounters: null,
+        runtimeMetrics: null,
+        scanPlan: null,
+        repositorySummary: "Reviewed the fixture and kept no finding.",
+        analysisBrief: null,
+        repositoryInventory: null,
+        frameworkProfile: null,
+        repositoryGraph: null,
+        graphSummary: null,
+        securityRegistry: null,
+        segmentationSummary: null,
+        pathInventory: null,
+        pathSummary: null,
+        reviewQueueSummary: null,
+        annotations: [],
+        annotationSummary: null,
+        coverageSnapshot: null,
+        coverageSummary: "Coverage summary.",
+        coveragePercent: 100,
+        reviewedFilesCount: 11,
+        eligibleFilesCount: 11,
+        reviewedBlocksCount: 11,
+        totalBlocksCount: 11,
+        reviewedLinesCount: 200,
+        totalLinesCount: 200,
+        tracedPathsCount: 0,
+        totalPathsCount: 0,
+        skippedFilesCount: 0,
+        highRiskFilesCount: 0,
+        isSafe: true,
+        securityScore: 96,
+        scoreRationale: null,
+        targetType: "folder",
+        sourcePath: "D:/repo",
+        preset: "balanced",
+        createdAt: "2026-09-25T08:00:00Z",
+        updatedAt: "2026-09-25T08:01:00Z",
+        lastVerification: null,
+        workflowSummary: null,
+      },
+    } as unknown as ScanSessionDetail;
+
+    render(<ScanResultsScreen session={session} onSelectFinding={vi.fn()} />);
+
+    // The count, the locations, and the reasons are all on screen, so a reviewer
+    // can tell a refused claim from a defect the review never saw.
+    expect(screen.getByText("Rejected candidates")).toBeInTheDocument();
+    expect(screen.getByText("4 dropped")).toBeInTheDocument();
+    // The headline count and the row count are the same number, and the chip in
+    // the score panel agrees with both.
+    expect(screen.getByText("Dropped candidates")).toBeInTheDocument();
+    expect(screen.getByText("src/user-profile.ts:27-29")).toBeInTheDocument();
+    expect(screen.getByText("src/session-store.ts:27")).toBeInTheDocument();
+    expect(screen.getAllByText("Evidence not found in source")).toHaveLength(2);
+    // A merged duplicate is not the same event as a refused claim, so it is not
+    // filed under the same heading.
+    expect(screen.getByText("Merged into an existing finding")).toBeInTheDocument();
+    expect(screen.getByText("Over the finding cap")).toBeInTheDocument();
+
+    // Collapsed by default: the reason is visible, the comparison is not.
+    expect(screen.queryByText(/the quoted evidence does not appear in the reviewed file/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Missing null check on user.address/ }));
+
+    expect(screen.getByText(/the quoted evidence does not appear in the reviewed file/)).toBeInTheDocument();
+    // The quoted code and the outcome of comparing it are both on screen.
+    expect(screen.getAllByText(/city: user.address.city, plan: user.plan_code;/).length).toBeGreaterThan(0);
+    expect(screen.getByText("not found in src/user-profile.ts")).toBeInTheDocument();
+    expect(screen.getByText(/Compared against src\/user-profile.ts \(1060 characters\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Submitted as correctness \/ high \/ confidence 92%/)).toBeInTheDocument();
+
+    // The candidate that quoted nothing says so, instead of looking like it was
+    // never compared at all.
+    fireEvent.click(screen.getByRole("button", { name: /Revocations are not awaited/ }));
+    expect(
+      screen.getByText(/No quoted code was submitted, and the evidence does not name src\/session-store.ts, so there was nothing left to verify/),
+    ).toBeInTheDocument();
   });
 });

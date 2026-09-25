@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { explainFinding, getRepoHotspots } from "./security";
+import { explainFinding, getRepoHotspots, getScanSession } from "./security";
 
 describe("security API error handling", () => {
   afterEach(() => {
@@ -76,4 +76,95 @@ describe("security API error handling", () => {
     ]);
   });
 
+  it("maps a dropped candidate with the comparison that refused it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: vi.fn().mockReturnValue("application/json"),
+      },
+      json: vi.fn().mockResolvedValue({
+        session: { id: "session-1", candidate_findings_count: 1 },
+        issues: { critical: 0, high: 0, medium: 0, low: 0 },
+        findings: [],
+        candidate_findings: [],
+        rejected_candidates: [
+          {
+            title: "Missing null check on user.address",
+            file: "src/user-profile.ts",
+            line: 27,
+            line_end: 29,
+            reason: "evidence-not-in-source",
+            detail: "the quoted evidence does not appear in the reviewed file",
+            diagnostics: {
+              evidence: "Code: `city: user.address.city;`",
+              quotes: ["city: user.address.city;"],
+              quotes_found: [false],
+              compared_file: "src/user-profile.ts",
+              compared_chars: 1060,
+              used_file_reference: false,
+              axis: "correctness",
+              severity: "high",
+              confidence: 92,
+            },
+          },
+        ],
+        rejections_by_reason: { "evidence-not-in-source": 1 },
+        verdict: "safe",
+        completed_at: null,
+        error_message: null,
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const detail = await getScanSession("session-1");
+
+    expect(detail.rejectedCandidates).toEqual([
+      {
+        title: "Missing null check on user.address",
+        file: "src/user-profile.ts",
+        line: 27,
+        lineEnd: 29,
+        reason: "evidence-not-in-source",
+        detail: "the quoted evidence does not appear in the reviewed file",
+        diagnostics: {
+          evidence: "Code: `city: user.address.city;`",
+          quotes: ["city: user.address.city;"],
+          quotesFound: [false],
+          comparedFile: "src/user-profile.ts",
+          comparedChars: 1060,
+          usedFileReference: false,
+          axis: "correctness",
+          severity: "high",
+          confidence: 92,
+        },
+      },
+    ]);
+    expect(detail.rejectionsByReason).toEqual({ "evidence-not-in-source": 1 });
+  });
+
+  it("tolerates an engine that answers without dropped candidates", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: vi.fn().mockReturnValue("application/json"),
+      },
+      json: vi.fn().mockResolvedValue({
+        session: { id: "session-1", candidate_findings_count: 0 },
+        issues: { critical: 0, high: 0, medium: 0, low: 0 },
+        findings: [],
+        candidate_findings: [],
+        verdict: "safe",
+        completed_at: null,
+        error_message: null,
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const detail = await getScanSession("session-1");
+
+    expect(detail.rejectedCandidates).toEqual([]);
+    expect(detail.rejectionsByReason).toEqual({});
+  });
 });

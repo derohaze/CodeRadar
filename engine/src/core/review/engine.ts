@@ -259,6 +259,7 @@ export class ReviewEngine {
       rejected.push({
         file: dropped.location.file,
         line: dropped.location.line,
+        lineEnd: dropped.location.lineEnd,
         title: dropped.title,
         reason: "over-finding-cap",
         detail: `dropped by the cap of ${maxFindings} findings`,

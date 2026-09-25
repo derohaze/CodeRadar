@@ -103,10 +103,18 @@ export interface RejectionDiagnostics {
   confidence?: number;
 }
 
-/** Why a candidate never became a finding. Kept for observability, not for UI. */
+/**
+ * Why a candidate never became a finding.
+ *
+ * Dropped candidates are shown to the reviewer with the reason each one was
+ * dropped, so a refusal is distinguishable from a miss. The fields are the claim
+ * as it arrived, unedited: nothing here is repaired into a finding shape.
+ */
 export interface RejectedCandidate {
   file: string;
   line: number;
+  /** Last line of the anchor the candidate asked for. Never less than `line`. */
+  lineEnd: number;
   title: string;
   /** Stable machine-readable reason. */
   reason: RejectionReason;

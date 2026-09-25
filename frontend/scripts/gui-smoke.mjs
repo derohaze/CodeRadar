@@ -59,6 +59,8 @@ const notes = [];
 const refusedReviews = [];
 /** Reviews this run started without restarting the app. */
 let startedReviews = 0;
+/** The last ground-truth evaluation, kept for the JSON report. */
+let evaluation = null;
 
 /** The window under test, shared by the step helpers. */
 let page;
@@ -100,6 +102,7 @@ async function main() {
       model: AI_KEY === "" ? null : { baseUrl: AI_BASE_URL, model: AI_MODEL },
       checks,
       notes,
+      evaluation,
     };
     writeFileSync(REPORT_PATH, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
     process.stdout.write(`${"-".repeat(72)}\nreport: ${REPORT_PATH}\n`);
@@ -266,17 +269,58 @@ function createFixtureRepository() {
 }
 
 /**
- * The files the ai-review fixture's own ground truth says are wrong.
+ * The fixture's own tables: the planted defects (D) and the code that only looks
+ * wrong (C).
  *
- * Read from the tracked table rather than copied here, so the check cannot drift
- * from the fixture it is scoring against. The fixture's `repo/` is the reviewed
- * scope and `GROUND_TRUTH.md` sits deliberately outside it.
+ * Read from the tracked document rather than copied here, so the checks cannot
+ * drift from the fixture they score against. The fixture's `repo/` is the
+ * reviewed scope and `GROUND_TRUTH.md` sits deliberately outside it.
  */
-function readGroundTruthFiles() {
-  const groundTruth = path.join(FIXTURES, "ai-review", "GROUND_TRUTH.md");
-  if (!existsSync(groundTruth)) return [];
+function readGroundTruth() {
+  const groundTruthPath = path.join(FIXTURES, "ai-review", "GROUND_TRUTH.md");
+  if (!existsSync(groundTruthPath)) return { defects: [], negatives: [], path: groundTruthPath };
 
-  return [...readFileSync(groundTruth, "utf8").matchAll(/^\|\s*D\d+\s*\|\s*`([^`]+)`/gm)].map((match) => match[1]);
+  const text = readFileSync(groundTruthPath, "utf8");
+
+  /** One entry per file named by a row, so a row covering two files covers both. */
+  const rowsFor = (prefix) =>
+    text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith(`| ${prefix}`) && line.endsWith("|"))
+      .flatMap((line) => {
+        const cells = line.replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+        const id = cells[0] ?? "";
+        return [...(cells[1] ?? "").matchAll(/`([^`]+)`/g)].map((file) => ({ id, file: file[1] }));
+      });
+
+  return { defects: rowsFor("D"), negatives: rowsFor("C"), path: groundTruthPath };
+}
+
+/**
+ * Scores a live app response with the engine's own scorer.
+ *
+ * The harness reads the same wire response the renderer rendered, so the run is
+ * scored through the same implementation the engine tests use rather than a
+ * second copy of the rules that could disagree with it.
+ */
+function scoreLiveRun(detail) {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "coderadar-score-"));
+  const detailPath = path.join(directory, "scan-detail.json");
+  writeFileSync(detailPath, JSON.stringify(detail));
+
+  try {
+    const output = execSync(`bun run score "${detailPath}" --json`, {
+      cwd: path.join(REPO_ROOT, "engine"),
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    // `bun run` echoes the command it ran before the output starts.
+    return JSON.parse(output.slice(output.indexOf("{")));
+  } catch (error) {
+    note(`the engine scorer could not be run: ${String(error).slice(0, 200)}`);
+    return null;
+  }
 }
 
 /** The engine's address and launch token, exactly as the renderer received them. */
@@ -527,9 +571,9 @@ async function runChecks(page) {
   note(`safe mode digest: ${resultsDigest(safeResults)}`);
 
   // ---- 9. Real model accuracy against the fixture's own ground truth ------
-  const groundTruth = readGroundTruthFiles();
+  const groundTruth = readGroundTruth();
   const groundTruthRepo = path.join(FIXTURES, "ai-review", "repo");
-  if (groundTruth.length === 0 || !existsSync(groundTruthRepo)) {
+  if (groundTruth.defects.length === 0 || !existsSync(groundTruthRepo)) {
     record("Real AI accuracy against ground truth", "NOT RUN", "the ai-review fixture repository is not present");
   } else {
     // The setup screen lists three recent sources at a time, so the source this
@@ -543,8 +587,8 @@ async function runChecks(page) {
     const truthResults = await waitForResults();
     const truthDetail = await readFinishedSession(truthIdsBefore);
     const reportedFiles = truthDetail.findings.map((finding) => finding.file);
-    const covered = groundTruth.filter((file) => reportedFiles.some((seen) => seen.endsWith(file)));
-    const missed = groundTruth.filter((file) => !covered.includes(file));
+    const covered = groundTruth.defects.filter((entry) => reportedFiles.some((seen) => seen.endsWith(entry.file)));
+    const missed = groundTruth.defects.filter((entry) => !covered.includes(entry));
     // The ground truth file sits above the reviewed scope on purpose, so a
     // finding that mentions it (or walks out of the scope) escaped the selection.
     const escaped = reportedFiles.filter((file) => file.includes("GROUND_TRUTH") || file.includes(".."));
@@ -552,8 +596,62 @@ async function runChecks(page) {
     record(
       "Real AI accuracy against ground truth",
       covered.length > 0 && escaped.length === 0 ? "PASS" : "FAIL",
-      `${covered.length}/${groundTruth.length} planted defects surfaced in ${truthDetail.findings.length} finding(s) with ${truthDetail.session.candidate_findings_count} candidate(s) dropped by the review bar; missed: ${missed.join(", ") || "none"}; ${escaped.length} finding(s) referenced code outside the selected scope`,
+      `${covered.length}/${groundTruth.defects.length} planted defects surfaced in ${truthDetail.findings.length} finding(s) with ${truthDetail.session.candidate_findings_count} candidate(s) dropped by the review bar; missed: ${missed.map((entry) => entry.id).join(", ") || "none"}; ${escaped.length} finding(s) referenced code outside the selected scope`,
     );
+
+    // ---- 10. What the review refused, and whether refusing it was right ----
+    // The app shows a count. A count is not evidence that the refusals were
+    // justified, so the response is scored against the fixture's own tables.
+    const droppedListed = truthDetail.rejected_candidates ?? [];
+    record(
+      "Dropped candidates reach the app with their list",
+      droppedListed.length === truthDetail.session.candidate_findings_count ? "PASS" : "FAIL",
+      droppedListed.length === 0
+        ? "no candidate was dropped in this run"
+        : `${droppedListed.length} dropped candidate(s) listed, each with a reason and a location: ${droppedListed
+            .slice(0, 3)
+            .map((entry) => `${entry.file}:${entry.line} (${entry.reason})`)
+            .join(", ")}`,
+    );
+
+    evaluation = scoreLiveRun(truthDetail);
+    if (evaluation === null) {
+      record("Dropped candidates scored against ground truth", "NOT RUN", "the engine scorer did not run");
+    } else {
+      const leakedIds = [...new Set(evaluation.negatives.filter((entry) => entry.leaked).map((entry) => entry.id))];
+      const controlIds = new Set(evaluation.negatives.map((entry) => entry.id));
+      record(
+        "No finding on code the ground truth calls correct",
+        leakedIds.length === 0 ? "PASS" : "FAIL",
+        leakedIds.length === 0
+          ? `${controlIds.size} negative control(s) untouched`
+          : `reported against: ${leakedIds.join(", ")}`,
+      );
+      record(
+        "No unsupported finding in the scored run",
+        evaluation.totals.unsupported === 0 ? "PASS" : "FAIL",
+        evaluation.totals.unsupported === 0
+          ? "every kept finding names a file the ground truth knows about"
+          : `${evaluation.totals.unsupported} finding(s) against files with no ground-truth row`,
+      );
+
+      for (const defect of evaluation.defects) {
+        note(
+          `ground truth ${defect.id} ${defect.detected ? "detected" : "MISSED"} ${defect.files.join(", ")} ${defect.anchors.join(" ")}`,
+        );
+      }
+      for (const negative of evaluation.negatives) {
+        if (negative.leaked) note(`ground truth ${negative.id} LEAKED as ${negative.anchors.join(" ")}`);
+      }
+      const breakdown = Object.entries(evaluation.rejection_breakdown ?? {});
+      note(
+        `ground truth totals: defects ${evaluation.totals.detectedDefects}/${evaluation.totals.plantedDefects}, TP=${evaluation.totals.truePositives} FP=${evaluation.totals.falsePositives} FN=${evaluation.totals.falseNegatives}, duplicate anchors ${evaluation.totals.duplicateAnchors}`,
+      );
+      note(
+        `ground truth rejections: ${breakdown.length === 0 ? "none" : breakdown.map(([reason, count]) => `${reason}=${count}`).join(" ")}`,
+      );
+    }
+
     // Why the review bar dropped a candidate is the difference between "the model
     // found nothing" and "the model's finding did not survive validation", so the
     // reasons the app prints are recorded next to the score.
@@ -564,10 +662,10 @@ async function runChecks(page) {
         .join(" | ") || "no candidate reason was printed";
     note(`ground truth candidate reasons: ${candidateReasons}`);
     note(`ground truth digest: ${resultsDigest(truthResults)}`);
-    note(`ground truth missed files: ${missed.join(", ") || "none"}`);
+    note(`ground truth missed: ${missed.map((entry) => `${entry.id} (${entry.file})`).join(", ") || "none"}`);
   }
 
-  // ---- 10. Every review this session started ------------------------------
+  // ---- 11. Every review this session started ------------------------------
   record(
     "No review was refused while another was claimed",
     refusedReviews.length === 0 ? "PASS" : "FAIL",

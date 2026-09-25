@@ -93,9 +93,45 @@ export interface ScanSessionDetail {
   };
   findings: Finding[];
   candidateFindings: Finding[];
+  /**
+   * Every candidate the review bar dropped, with the reason behind each one.
+   *
+   * Deliberately not a `Finding`: a dropped candidate has no severity, no impact
+   * and no fix, and filling those in would present a refused claim as a finding.
+   * Keeping the reasons visible is what makes a refusal distinguishable from a
+   * defect the review never saw.
+   */
+  rejectedCandidates: RejectedCandidateSummary[];
+  /** The engine's own tally of rejections by reason. */
+  rejectionsByReason: Record<string, number>;
   verdict: "safe" | "issues_found";
   completedAt: string | null;
   errorMessage: string | null;
+}
+
+export interface RejectedCandidateSummary {
+  title: string;
+  file: string;
+  line: number;
+  lineEnd: number;
+  /** The engine's machine-readable reason, e.g. `evidence-not-in-source`. */
+  reason: string;
+  detail: string;
+  /** Present only when the evidence gate is what dropped the candidate. */
+  diagnostics: RejectionComparison | null;
+}
+
+export interface RejectionComparison {
+  evidence: string | null;
+  quotes: string[];
+  quotesFound: boolean[];
+  comparedFile: string | null;
+  comparedChars: number | null;
+  /** True when no quote was usable, so a file reference was the only check run. */
+  usedFileReference: boolean;
+  axis: string | null;
+  severity: string | null;
+  confidence: number | null;
 }
 
 export interface WorkflowRepoIntelligenceSummary {
@@ -364,9 +400,42 @@ function mapScanSessionDetail(data: ScanSessionDetailApiResponse): ScanSessionDe
     issues: data.issues,
     findings: data.findings.map(mapFinding),
     candidateFindings: data.candidate_findings.map(mapFinding),
+    // An engine older than this field answers without it, and a dropped candidate
+    // is not worth failing the whole screen for.
+    rejectedCandidates: (data.rejected_candidates ?? []).map(mapRejectedCandidate),
+    rejectionsByReason: data.rejections_by_reason ?? {},
     verdict: data.verdict,
     completedAt: data.completed_at,
     errorMessage: data.error_message,
+  };
+}
+
+function mapRejectedCandidate(data: RejectedCandidateApiResponse): RejectedCandidateSummary {
+  const line = Number.isFinite(data.line) ? data.line : 0;
+  const rawEnd = Number.isFinite(data.line_end) ? data.line_end : line;
+  const comparison = data.diagnostics;
+
+  return {
+    title: data.title,
+    file: data.file,
+    line,
+    lineEnd: Math.max(line, rawEnd),
+    reason: data.reason,
+    detail: data.detail,
+    diagnostics:
+      comparison === null || comparison === undefined
+        ? null
+        : {
+            evidence: comparison.evidence,
+            quotes: comparison.quotes ?? [],
+            quotesFound: comparison.quotes_found ?? [],
+            comparedFile: comparison.compared_file,
+            comparedChars: comparison.compared_chars,
+            usedFileReference: comparison.used_file_reference === true,
+            axis: comparison.axis,
+            severity: comparison.severity,
+            confidence: comparison.confidence,
+          },
   };
 }
 
@@ -936,9 +1005,31 @@ interface ScanSessionDetailApiResponse {
   issues: ScanSessionDetail["issues"];
   findings: FindingApiResponse[];
   candidate_findings: FindingApiResponse[];
+  rejected_candidates?: RejectedCandidateApiResponse[];
+  rejections_by_reason?: Record<string, number>;
   verdict: ScanSessionDetail["verdict"];
   completed_at: string | null;
   error_message: string | null;
+}
+
+interface RejectedCandidateApiResponse {
+  title: string;
+  file: string;
+  line: number;
+  line_end: number;
+  reason: string;
+  detail: string;
+  diagnostics: {
+    evidence: string | null;
+    quotes: string[];
+    quotes_found: boolean[];
+    compared_file: string | null;
+    compared_chars: number | null;
+    used_file_reference: boolean;
+    axis: string | null;
+    severity: string | null;
+    confidence: number | null;
+  } | null;
 }
 
 interface FindingApiResponse {

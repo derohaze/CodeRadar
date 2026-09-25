@@ -11,6 +11,7 @@
   "scripts": {
     "serve": "bun run src/node/serve.ts",
     "review": "bun run src/cli.ts review",
+    "score": "bun run scripts/score-review.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "build:electron": "bun build src/node/electron-entry.ts --target=node --format=cjs --outfile=../frontend/electron/review-engine.cjs && bun run scripts/sync-electron-prompts.ts"
