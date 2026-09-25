@@ -234,11 +234,14 @@ export function createReviewService(options: ReviewServiceOptions): ReviewServic
     async startReview(request: ReviewServiceRequest, onEvent?: ReviewEventSink): Promise<ReviewServiceResult> {
       if (running) throw new Error("A review is already running.");
 
-      running = true;
       controller = new AbortController();
-      const settings = await options.settingsStore.read();
 
       try {
+        // Taken after the guard but before anything can fail. A lock taken before
+        // the settings read would be stranded by a read that rejects, and every
+        // later review would be refused with 409 for the life of the process.
+        running = true;
+        const settings = await options.settingsStore.read();
         const wantsAi = request.useAi ?? settings.defaults.useAi;
         const reviewer = wantsAi ? await resolveProviderOrExplain(onEvent) : null;
 

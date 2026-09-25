@@ -18,6 +18,7 @@ import path from "node:path";
 import { startReviewApiServer, type ReviewApiServer } from "../src/node/api-server.ts";
 import { createReviewService } from "../src/node/service.ts";
 import { createSettingsStore } from "../src/node/settings.ts";
+import type { GitPort } from "../src/core/ports.ts";
 import type { WireFinding, WireScanDetail, WireSession } from "../src/node/api-contract.ts";
 
 const PROMPTS_DIR = path.join(import.meta.dir, "..", "prompts");
@@ -40,11 +41,12 @@ function authorized(pathname: string, init: RequestInit = {}): Promise<Response>
 }
 
 /** Polls until the review reaches a terminal state, with a real deadline. */
-async function awaitCompletion(id: string): Promise<WireScanDetail> {
+async function awaitCompletion(id: string, origin: string = server.origin): Promise<WireScanDetail> {
   const deadline = Date.now() + 20_000;
 
   while (Date.now() < deadline) {
-    const detail = (await (await authorized(`/scans/${id}`)).json()) as WireScanDetail;
+    const response = await fetch(`${origin}/api/v1/scans/${id}`, { headers: { "x-coderadar-token": TOKEN } });
+    const detail = (await response.json()) as WireScanDetail;
     if (detail.session.status === "completed" || detail.session.status === "failed") return detail;
     await Bun.sleep(50);
   }
@@ -165,6 +167,27 @@ describe("the local review API review flow", () => {
     expect(counted).toBe(finished.findings.length);
   });
 
+  it("applies the preset's finding budget to the review", async () => {
+    const run = async (preset: "safe" | "balanced" | "aggressive") => {
+      const started = await authorized("/scans", {
+        method: "POST",
+        body: JSON.stringify({ source_path: BUGGY_FIXTURE, target_type: "folder", preset, scan_mode: "deep" }),
+      });
+      expect(started.status).toBe(200);
+      const detail = (await started.json()) as WireScanDetail;
+      return awaitCompletion(detail.session.id);
+    };
+
+    // The fixture holds ten defect findings. The preset is the user's choice of
+    // how wide a net the run casts, so it has to change the result, not just the
+    // label on the screen.
+    const safe = await run("safe");
+    const aggressive = await run("aggressive");
+
+    expect(safe.findings.length).toBe(8);
+    expect(aggressive.findings.length).toBe(10);
+  });
+
   it("carries the review's own coverage and repository facts", async () => {
     const sessions = (await (await authorized("/sessions")).json()) as WireSession[];
     const finished = sessions.find((session) => session.findings_count === 10);
@@ -249,6 +272,117 @@ describe("the local review API review flow", () => {
   });
 });
 
+describe("the local review API review lifecycle", () => {
+  function start(preset = "balanced", scanMode = "deep"): Promise<Response> {
+    return authorized("/scans", {
+      method: "POST",
+      body: JSON.stringify({ source_path: BUGGY_FIXTURE, target_type: "folder", preset, scan_mode: scanMode }),
+    });
+  }
+
+  it("refuses a second review while one is in flight", async () => {
+    const first = await start();
+    expect(first.status).toBe(200);
+    const detail = (await first.json()) as WireScanDetail;
+
+    const second = await start();
+    expect(second.status).toBe(409);
+
+    // Let the first finish so the next test starts from a released lock.
+    await awaitCompletion(detail.session.id);
+  });
+
+  it("accepts a second review as soon as the first one has completed", async () => {
+    const first = await start();
+    expect(first.status).toBe(200);
+    const firstDetail = (await first.json()) as WireScanDetail;
+    const firstFinished = await awaitCompletion(firstDetail.session.id);
+    expect(firstFinished.session.status).toBe("completed");
+
+    // The results screen is on screen at this point for a real user, and running
+    // another review from it is the ordinary next action. A lock that outlives the
+    // review would refuse exactly that.
+    const second = await start();
+    expect(second.status).toBe(200);
+    const secondDetail = (await second.json()) as WireScanDetail;
+    expect(secondDetail.session.id).not.toBe(firstDetail.session.id);
+
+    const secondFinished = await awaitCompletion(secondDetail.session.id);
+    expect(secondFinished.session.status).toBe("completed");
+    expect(secondFinished.error_message).toBeNull();
+    expect(secondFinished.findings.length).toBe(firstFinished.findings.length);
+  });
+
+  it("releases the lock before the finished state reaches the results screen", async () => {
+    const first = await start();
+    expect(first.status).toBe(200);
+    const firstDetail = (await first.json()) as WireScanDetail;
+
+    // The progress screen is driven by this stream, and the results screen only
+    // opens after the terminal frame arrives. So the end of this stream is the
+    // exact moment a user can reach for Review again, and the lock has to be long
+    // gone by then — not merely gone by the time some later poll notices.
+    const stream = await authorized(`/scans/${firstDetail.session.id}/events`);
+    const frames = await stream.text();
+    expect(frames).toContain("event: scan_completed");
+
+    const second = await start();
+    expect(second.status).toBe(200);
+    const secondDetail = (await second.json()) as WireScanDetail;
+    expect(secondDetail.session.id).not.toBe(firstDetail.session.id);
+    expect((await awaitCompletion(secondDetail.session.id)).session.status).toBe("completed");
+  });
+
+  it("does not strand the running lock when a review fails before it starts", async () => {
+    // Settings is read before the engine exists, which makes a failing read the
+    // one error that happens while the review is already claimed. If the lock
+    // outlived it, the failure the user sees once would become every review being
+    // refused with 409 for the lifetime of the engine, with nothing running.
+    const root = await mkdtemp(path.join(os.tmpdir(), "coderadar-lifecycle-"));
+    const settingsStore = createSettingsStore({ filePath: path.join(root, "settings.json") });
+    let readFails = true;
+    const service = createReviewService({
+      promptsDir: PROMPTS_DIR,
+      settingsStore: {
+        ...settingsStore,
+        read: async () => {
+          if (readFails) throw new Error("the settings file could not be read");
+          return settingsStore.read();
+        },
+      },
+    });
+    const local = await startReviewApiServer({ service, token: TOKEN, port: 0 });
+    const post = (): Promise<Response> =>
+      fetch(`${local.origin}/api/v1/scans`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-coderadar-token": TOKEN },
+        body: JSON.stringify({ source_path: BUGGY_FIXTURE, target_type: "folder", preset: "balanced", scan_mode: "deep" }),
+      });
+
+    try {
+      const failed = await post();
+      expect(failed.status).toBe(200);
+      const failedDetail = (await failed.json()) as WireScanDetail;
+
+      // The failure is reported as a failed session, so the screen can say why.
+      const settled = await awaitCompletion(failedDetail.session.id, local.origin);
+      expect(settled.session.status).toBe("failed");
+      expect(settled.error_message).toContain("could not be read");
+
+      readFails = false;
+      const retried = await post();
+      expect(retried.status).toBe(200);
+      const retriedDetail = (await retried.json()) as WireScanDetail;
+      const retriedFinished = await awaitCompletion(retriedDetail.session.id, local.origin);
+      expect(retriedFinished.session.status).toBe("completed");
+      expect(retriedFinished.findings.length).toBe(10);
+    } finally {
+      await local.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("the local review API settings routes", () => {
   it("exposes the provider catalogue in the renderer's shape", async () => {
     const providers = (await (await authorized("/settings/providers")).json()) as Array<Record<string, unknown>>;
@@ -330,5 +464,84 @@ describe("the local review API settings routes", () => {
     expect(result.ok).toBe(false);
     expect(result.message).not.toContain("No API key");
     expect(result.message).toBe("The provider could not be reached.");
+  });
+});
+
+describe("the local review API scope controls", () => {
+  const DIFF_FIXTURE = path.join(import.meta.dir, "fixtures", "diff-target");
+
+  /** The loop bound was altered on new line 5; the sort defect is unchanged. */
+  const DIFF_TEXT = [
+    "diff --git a/src/paging.ts b/src/paging.ts",
+    "--- a/src/paging.ts",
+    "+++ b/src/paging.ts",
+    "@@ -3,5 +3,5 @@",
+    " export function sumScores(scores: number[]): number {",
+    "   let total = 0;",
+    "-  for (let index = 0; index < scores.length; index += 1) {",
+    "+  for (let index = 0; index <= scores.length; index += 1) {",
+    "     total += scores[index];",
+    "   }",
+    "",
+  ].join("\n");
+
+  let scopeServer: ReviewApiServer;
+  let scopeRoot: string;
+
+  beforeAll(async () => {
+    scopeRoot = await mkdtemp(path.join(os.tmpdir(), "coderadar-scope-"));
+    // A stub repository keeps this test about the mode the caller asked for,
+    // rather than about whatever the checkout this suite runs in happens to
+    // contain. The fixture holds one defect on the changed line and one elsewhere.
+    const git: GitPort = {
+      detectRepository: async () => ({ root: DIFF_FIXTURE, branch: "feature/paging" }),
+      resolveBaseBranch: async () => "main",
+      diff: async () => DIFF_TEXT,
+      changedFiles: async () => ["src/paging.ts"],
+    };
+    const service = createReviewService({
+      settingsStore: createSettingsStore({ filePath: path.join(scopeRoot, "settings.json") }),
+      promptsDir: PROMPTS_DIR,
+      git,
+    });
+
+    scopeServer = await startReviewApiServer({ service, token: TOKEN, port: 0 });
+  });
+
+  afterAll(async () => {
+    await scopeServer.close();
+    await rm(scopeRoot, { recursive: true, force: true });
+  });
+
+  async function runWith(scanMode: "fast" | "deep"): Promise<WireScanDetail> {
+    const started = await fetch(`${scopeServer.origin}/api/v1/scans`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-coderadar-token": TOKEN },
+      body: JSON.stringify({ source_path: DIFF_FIXTURE, target_type: "folder", preset: "balanced", scan_mode: scanMode }),
+    });
+    expect(started.status).toBe(200);
+
+    const detail = (await started.json()) as WireScanDetail;
+    return awaitCompletion(detail.session.id, scopeServer.origin);
+  }
+
+  it("scopes a fast review to the diff and a deep review to the whole target", async () => {
+    const deep = await runWith("deep");
+    const fast = await runWith("fast");
+
+    // Deep is not a diff review, so both defects in the fixture are reported and
+    // nothing is anchored to a changed line.
+    expect(deep.findings.length).toBe(2);
+    expect(deep.findings.every((finding) => finding.file.endsWith("paging.ts"))).toBe(true);
+    const deepLimitations = deep.session.analysis_brief?.analysis_limitations ?? [];
+    expect(deepLimitations.some((line: string) => line.includes("anchored to lines changed"))).toBe(false);
+
+    // Fast reviews what changed: the defect on the changed line survives, the
+    // unchanged one does not, and the review says so instead of looking complete.
+    expect(fast.findings.length).toBe(1);
+    expect(fast.findings[0]?.line).toBe(5);
+    expect(fast.session.candidate_findings_count).toBeGreaterThanOrEqual(1);
+    const fastLimitations = fast.session.analysis_brief?.analysis_limitations ?? [];
+    expect(fastLimitations.some((line: string) => line.includes("anchored to lines changed against main"))).toBe(true);
   });
 });

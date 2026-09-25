@@ -122,10 +122,16 @@ export class ReviewEngine {
     const walkRoot = targetStat.isFile ? fs.directoryName(absoluteTarget) : absoluteTarget;
     let pathBase = walkRoot;
 
+    // A diff is read only when the caller asked for a diff review. Anchoring a
+    // plain review to whichever branch git happens to name would silently demote
+    // every finding on an unchanged line, which is a false negative nobody
+    // asked for. `--changed-only` / an explicit base branch is the request.
+    const diffRequested = this.options.changedOnly === true || this.options.baseBranch !== undefined;
+
     let diffState = EMPTY_DIFF;
     if (this.options.git !== undefined) {
       this.emit({ type: "git:start", message: "Inspecting git state" });
-      diffState = await this.collectDiff(absoluteTarget, walkRoot, targetStat.isFile);
+      diffState = await this.collectDiff(absoluteTarget, walkRoot, targetStat.isFile, diffRequested);
 
       // Paths are named against the repository so they match the diff and the
       // editor, but only when the target is genuinely inside it.
@@ -137,7 +143,9 @@ export class ReviewEngine {
         type: "git:done",
         message: diffState.diffAware
           ? `Comparing against ${diffState.baseBranch ?? "the base branch"}`
-          : "No usable diff, reviewing the files as they are",
+          : diffRequested
+            ? "No usable diff, reviewing the files as they are"
+            : "Reviewing the selected scope in full",
         counts: { changedFiles: diffState.changedPaths.size },
       });
     }
@@ -296,7 +304,12 @@ export class ReviewEngine {
   }
 
   /** Best-effort git state. A missing repository is normal, not an error. */
-  private async collectDiff(target: string, root: string, isFile: boolean): Promise<DiffState> {
+  private async collectDiff(
+    target: string,
+    root: string,
+    isFile: boolean,
+    diffRequested: boolean,
+  ): Promise<DiffState> {
     const git = this.options.git;
     if (git === undefined) return EMPTY_DIFF;
 
@@ -304,23 +317,27 @@ export class ReviewEngine {
       const repository = await git.detectRepository(isFile ? target : root);
       if (repository === null) return EMPTY_DIFF;
 
-      const branch = repository.branch;
-      const baseBranch =
-        this.options.baseBranch ?? (await git.resolveBaseBranch(repository.root, this.options.baseBranch));
+      // The repository is still detected without a diff review, because paths
+      // are named against it. No base branch is resolved and no diff is read, so
+      // `diffAware` stays false and no finding is anchored to a changed line.
       const base: DiffState = {
         repositoryRoot: repository.root,
-        branch,
-        baseBranch,
+        branch: repository.branch,
+        baseBranch: null,
         changedPaths: new Set(),
         changedLinesByPath: new Map(),
         diffAware: false,
       };
 
+      if (!diffRequested) return base;
+
+      const baseBranch =
+        this.options.baseBranch ?? (await git.resolveBaseBranch(repository.root, this.options.baseBranch));
       if (baseBranch === null) return base;
 
       const diffText = await git.diff(repository.root, baseBranch);
       const parsed = parseUnifiedDiff(diffText);
-      if (!parsed.hasContent) return base;
+      if (!parsed.hasContent) return { ...base, baseBranch };
 
       const changedLinesByPath = new Map<string, Set<number>>();
       for (const file of parsed.files) {
@@ -329,6 +346,7 @@ export class ReviewEngine {
 
       return {
         ...base,
+        baseBranch,
         changedPaths: new Set(diffPaths(parsed)),
         changedLinesByPath,
         diffAware: true,

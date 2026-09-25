@@ -22,7 +22,8 @@
 
 import { _electron as electron } from "playwright";
 import { execSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,8 +40,25 @@ const AI_BASE_URL = process.env["CODERADAR_AI_BASE_URL"] ?? "https://integrate.a
 const REVIEW_TIMEOUT_MS = Number(process.env["GUI_SMOKE_TIMEOUT_MS"] ?? 600_000);
 const BOOT_TIMEOUT_MS = 60_000;
 
+/**
+ * Rendered only while a review is running, so seeing it proves one is in flight.
+ *
+ * The earlier version of this script waited for a "%", which the finished results
+ * screen also prints ("100% COVERED"). That made the wait pass instantly against
+ * the *previous* review's screen, so the next review was started while the current
+ * one was still running — which the API correctly refused with 409. The refusal
+ * was real; the reason was this harness, not the app.
+ */
+const RUNNING_MARKER = "Stop review";
+/** Rendered only by the finished-results screen. */
+const RESULTS_MARKER = "Validated findings";
+
 const checks = [];
 const notes = [];
+/** Reviews the local API refused because another one was still claimed. */
+const refusedReviews = [];
+/** Reviews this run started without restarting the app. */
+let startedReviews = 0;
 
 /** The window under test, shared by the step helpers. */
 let page;
@@ -95,7 +113,12 @@ async function main() {
 
 async function boot(page, app) {
   page.on("console", (message) => {
-    if (message.type() === "error") note(`renderer console error: ${message.text().slice(0, 200)}`);
+    if (message.type() !== "error") return;
+    const text = message.text();
+    // The renderer logs the status it received, which is how a refused review is
+    // told apart from one that simply took a while.
+    if (/status: 409/.test(text)) refusedReviews.push(text.slice(0, 200));
+    note(`renderer console error: ${text.slice(0, 200)}`);
   });
   page.on("pageerror", (error) => note(`renderer page error: ${String(error).slice(0, 200)}`));
 
@@ -167,23 +190,132 @@ async function waitForResults() {
   const deadline = Date.now() + REVIEW_TIMEOUT_MS;
   while (Date.now() < deadline) {
     const text = await page.evaluate(() => document.body.innerText);
-    if (text.includes("Validated findings")) return text;
-    if (text.includes("The review could not") || text.includes("failed")) {
-      // Keep polling: a failed session still renders the results screen.
-    }
+    if (text.includes(RESULTS_MARKER)) return text;
     await new Promise((resolve) => setTimeout(resolve, 750));
   }
   throw new Error(`no results screen within ${REVIEW_TIMEOUT_MS}ms`);
 }
 
-async function waitForProgress() {
-  const deadline = Date.now() + 20_000;
+/**
+ * Waits for the progress screen, which only exists while a review is running.
+ *
+ * This is the gate that keeps every later step honest: nothing is read until a
+ * review has demonstrably started, so a refused or refused-looking start is
+ * reported as a failure instead of being read as the previous review's results.
+ */
+async function waitForReviewStarted(targetPath) {
+  const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
     const text = await page.evaluate(() => document.body.innerText);
-    if (text.includes("%") || /reviewing|progress|analysing|analyzing/i.test(text)) return text;
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    if (text.includes(RUNNING_MARKER)) return text;
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  return null;
+  const seen = await page.evaluate(() => document.body.innerText.slice(0, 300)).catch(() => "(unreadable)");
+  throw new Error(`the review never started for ${targetPath}. body=${JSON.stringify(seen)}`);
+}
+
+/** The committed loop bound. The altered one below is what creates a changed line. */
+const GIT_FIXTURE_PAGING_INITIAL = `/** Fixture: the loop bound is altered on a changed line. */
+
+export function sumScores(scores: number[]): number {
+  let total = 0;
+  for (let index = 0; index < scores.length; index += 1) {
+    total += scores[index];
+  }
+  return total;
+}
+`;
+
+/** The working-tree version, deliberately left uncommitted. */
+const GIT_FIXTURE_PAGING_CHANGED = GIT_FIXTURE_PAGING_INITIAL.replace("index < scores.length", "index <= scores.length");
+
+/** A defect no commit in the fixture history touches. */
+const GIT_FIXTURE_SORTING = `/** Fixture: a defect on an unchanged line. */
+
+export function sortedScores(scores: number[]): number[] {
+  const totals: number[] = [...scores];
+  return totals.sort();
+}
+`;
+
+/**
+ * A real git repository, built by this run, outside the project.
+ *
+ * The git and changed-only checks need a history they control: one defect on a
+ * line that changed since the base branch, and one on a line that did not. The
+ * altered loop bound is left uncommitted on purpose, because that is what makes
+ * it a changed line for `git diff <base>`.
+ */
+function createFixtureRepository() {
+  const root = mkdtempSync(path.join(os.tmpdir(), "coderadar-gui-git-"));
+  const git = (args) => execSync(`git ${args}`, { cwd: root, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+
+  mkdirSync(path.join(root, "src"), { recursive: true });
+  writeFileSync(path.join(root, "src", "paging.ts"), GIT_FIXTURE_PAGING_INITIAL);
+  writeFileSync(path.join(root, "src", "sorting.ts"), GIT_FIXTURE_SORTING);
+  writeFileSync(path.join(root, "README.md"), "# Fixture repository for the CodeRadar GUI smoke test\n");
+
+  git("init -b main");
+  git("config user.email smoke@example.invalid");
+  git('config user.name "CodeRadar smoke"');
+  git("add -A");
+  git('commit -m "fixture: initial state"');
+
+  writeFileSync(path.join(root, "src", "paging.ts"), GIT_FIXTURE_PAGING_CHANGED);
+  return root;
+}
+
+/**
+ * The files the ai-review fixture's own ground truth says are wrong.
+ *
+ * Read from the tracked table rather than copied here, so the check cannot drift
+ * from the fixture it is scoring against. The fixture's `repo/` is the reviewed
+ * scope and `GROUND_TRUTH.md` sits deliberately outside it.
+ */
+function readGroundTruthFiles() {
+  const groundTruth = path.join(FIXTURES, "ai-review", "GROUND_TRUTH.md");
+  if (!existsSync(groundTruth)) return [];
+
+  return [...readFileSync(groundTruth, "utf8").matchAll(/^\|\s*D\d+\s*\|\s*`([^`]+)`/gm)].map((match) => match[1]);
+}
+
+/** The engine's address and launch token, exactly as the renderer received them. */
+async function readEngineAccess() {
+  return page.evaluate(() => ({
+    baseUrl: window.electronAPI?.apiBaseUrl ?? null,
+    token: window.electronAPI?.apiToken ?? null,
+  }));
+}
+
+async function engineGet(access, pathname) {
+  const response = await fetch(`${access.baseUrl}${pathname}`, {
+    headers: access.token === null ? {} : { "X-CodeRadar-Token": access.token },
+  });
+  return response.json();
+}
+
+/** The ids of the sessions the engine is holding, oldest first. */
+async function sessionIds() {
+  const sessions = await engineGet(await readEngineAccess(), "/sessions");
+  return sessions.map((session) => session.id);
+}
+
+/**
+ * The session a review just created, plus the findings the engine returned for it.
+ *
+ * The results screen splits findings into an open list and an approval queue, and
+ * only the open list renders file:line. So the screen cannot say whether a defect
+ * the review dropped was dropped on purpose — a changed-only review and a broken
+ * review can look identical on it. The engine's own response can tell them apart,
+ * and it is the same response the renderer rendered.
+ */
+async function readFinishedSession(idsBeforeStart) {
+  const access = await readEngineAccess();
+  const sessions = await engineGet(access, "/sessions");
+  const created = sessions.find((session) => !idsBeforeStart.includes(session.id));
+  if (created === undefined) throw new Error("the review did not create a session");
+
+  return engineGet(access, `/scans/${created.id}`);
 }
 
 /** Remembers sources the way the app remembers them, so its own chips can pick them. */
@@ -198,7 +330,23 @@ async function seedRecent(entries) {
   await page.getByText("Start a code review", { exact: false }).waitFor({ timeout: BOOT_TIMEOUT_MS });
 }
 
-async function startReview(targetPath, kind) {
+/**
+ * Chooses a Preset / Review mode value through the app's own Select.
+ *
+ * Both controls are comboboxes with no test id, so the right one is found by the
+ * value it currently shows — the preset trigger shows a preset name, the mode
+ * trigger shows "Deep review" or "Fast review".
+ */
+async function chooseFromSelect(triggerPattern, optionLabel) {
+  const trigger = page.locator('button[role="combobox"]').filter({ hasText: triggerPattern }).first();
+  await trigger.click();
+  await page.getByRole("option", { name: new RegExp(`^${escapeRegExp(optionLabel)}$`) }).click();
+}
+
+async function startReview(targetPath, kind, options = {}) {
+  if (options.preset !== undefined) await chooseFromSelect(/Safe mode|Balanced|Aggressive/, options.preset);
+  if (options.scanMode !== undefined) await chooseFromSelect(/Deep review|Fast review/, options.scanMode);
+
   await targetToggle(page, kind === "file" ? "File" : "Folder").click();
   // The app's own "Recent" chip: select by the full path it carries as its title,
   // so a Windows path never goes through a CSS attribute selector.
@@ -207,7 +355,9 @@ async function startReview(targetPath, kind) {
   if (pathShown) throw new Error(`the source was not selected: ${targetPath}`);
 
   await page.getByRole("button", { name: /Run review/ }).click();
-  const progress = await waitForProgress();
+  const progress = await waitForReviewStarted(targetPath);
+  startedReviews += 1;
+  note(`review started: ${targetPath} (${options.preset ?? "default preset"}, ${options.scanMode ?? "default mode"})`);
   return progress;
 }
 
@@ -224,11 +374,12 @@ function pythonOrRustRunning() {
 }
 
 async function runChecks(page) {
+  const fixtureRepo = createFixtureRepository();
   await seedRecent([
     { path: FIXTURES + "\\buggy", type: "folder", workspace: "fixtures" },
     { path: FIXTURES + "\\clean", type: "folder", workspace: "fixtures" },
     { path: FIXTURES + "\\buggy\\src\\render.ts", type: "file", workspace: "src" },
-    { path: REPO_ROOT, type: "folder", workspace: "CodeGuard" },
+    { path: fixtureRepo, type: "folder", workspace: "git-fixture" },
   ]);
 
   // ---- 1. Real AI provider configured through the Settings GUI -------------
@@ -245,12 +396,14 @@ async function runChecks(page) {
 
   // ---- 2. Folder review with the real model -------------------------------
   const foreignProcesses = [];
-  await startReview(path.join(FIXTURES, "buggy"), "folder");
+  const folderIdsBefore = await sessionIds();
+  await startReview(path.join(FIXTURES, "buggy"), "folder", { preset: "Balanced", scanMode: "Deep review" });
   const watcher = setInterval(() => {
     for (const name of pythonOrRustRunning()) foreignProcesses.push(name);
   }, 1500);
 
   const folderResults = await waitForResults();
+  const folderDetail = await readFinishedSession(folderIdsBefore);
   clearInterval(watcher);
   record("Folder review reaches results", "PASS", "the review started, showed progress, and rendered results");
   record(
@@ -279,9 +432,20 @@ async function runChecks(page) {
   // ---- 3. Click a finding and read the anchored detail --------------------
   await assertFindingDetail(page, findings);
 
-  // ---- 4. Single-file review does not become a repository review ----------
+  // ---- 4. A second review, started from the finished review's screen ------
+  // The results screen on view is exactly the state a user presses Review in
+  // next, so the second run happens with no reload and nothing in between. The
+  // progress screen must be the one that appears: if the previous review still
+  // held the engine, the app would have been refused and the old results would
+  // still be on screen.
   await navigateHome(page);
-  await startReview(path.join(FIXTURES, "buggy", "src", "render.ts"), "file");
+  const fileStarted = await startReview(path.join(FIXTURES, "buggy", "src", "render.ts"), "file");
+  record(
+    "Second review starts from the finished review's screen",
+    fileStarted.includes(RUNNING_MARKER) && !fileStarted.includes(RESULTS_MARKER) ? "PASS" : "FAIL",
+    "a new review started with the previous results still the last screen, and nothing was refused",
+  );
+
   const fileResults = await waitForResults();
   const fileSummary = readSummary(fileResults);
   const scopeEvidence = readReviewed(fileResults);
@@ -300,7 +464,7 @@ async function runChecks(page) {
 
   // ---- 5. Correct code produces no findings -------------------------------
   await navigateHome(page);
-  await startReview(path.join(FIXTURES, "clean"), "folder");
+  await startReview(path.join(FIXTURES, "clean"), "folder", { preset: "Balanced", scanMode: "Deep review" });
   const cleanResults = await waitForResults();
   const cleanSummary = readSummary(cleanResults);
   record(
@@ -313,16 +477,104 @@ async function runChecks(page) {
 
   // ---- 6. A real git repository ------------------------------------------
   await navigateHome(page);
-  await startReview(REPO_ROOT, "folder");
+  const repoIdsBefore = await sessionIds();
+  await startReview(fixtureRepo, "folder", { preset: "Balanced", scanMode: "Deep review" });
   const repoResults = await waitForResults();
-  const repoSummary = readSummary(repoResults);
-  const escaped = readFindings(repoResults).filter((finding) => finding.file.includes(".."));
+  const repoDetail = await readFinishedSession(repoIdsBefore);
+  const repoFiles = repoDetail.findings.map((finding) => finding.file);
+  const escaped = repoFiles.filter((file) => file.includes("..") || file.includes("GROUND_TRUTH"));
+  const sawChangedFile = repoFiles.some((file) => file.endsWith("src/paging.ts"));
+  const sawUnchangedFile = repoFiles.some((file) => file.endsWith("src/sorting.ts"));
   record(
     "Git repository review",
-    repoResults.length > 0 && escaped.length === 0 ? "PASS" : "FAIL",
-    `the repository root was reviewed in git (${readReviewed(repoResults)}), ${repoSummary.total} finding(s), ${escaped.length} outside the scope`,
+    sawChangedFile && sawUnchangedFile && escaped.length === 0 ? "PASS" : "FAIL",
+    `both planted defects came back from a real repository the engine found its own root in: ${repoDetail.findings.length} finding(s) (${repoFiles.join(", ") || "none"}), ${readReviewed(repoResults)} reviewed, ${repoDetail.session.candidate_findings_count} candidate(s), ${escaped.length} outside the selected scope`,
   );
-  note(`repository digest: ${resultsDigest(repoResults)}`);
+  note(`fixture repository digest: ${resultsDigest(repoResults)}`);
+
+  // ---- 7. Changed-only, requested through the review mode control ---------
+  await navigateHome(page);
+  const fastIdsBefore = await sessionIds();
+  await startReview(fixtureRepo, "folder", { preset: "Balanced", scanMode: "Fast review" });
+  const fastResults = await waitForResults();
+  const fastDetail = await readFinishedSession(fastIdsBefore);
+  const fastFiles = fastDetail.findings.map((finding) => finding.file);
+  const anchored = /anchored to lines changed against \S+/.test(fastResults);
+  const keptChanged = fastFiles.some((file) => file.endsWith("src/paging.ts"));
+  const droppedUnchanged = !fastFiles.some((file) => file.endsWith("src/sorting.ts"));
+  record(
+    "Review mode changes scope (Fast vs Deep)",
+    anchored && keptChanged && droppedUnchanged && fastDetail.findings.length < repoDetail.findings.length ? "PASS" : "FAIL",
+    `Fast reviewed only the changed file and reported its defect (${fastDetail.findings.length} finding(s): ${fastFiles.join(", ") || "none"}, ${readReviewed(fastResults)} reviewed), while Deep reported ${repoDetail.findings.length} from the whole repository; anchoring note: ${anchored}`,
+  );
+  note(`changed-only digest: ${resultsDigest(fastResults)}`);
+
+  // ---- 8. The preset reaches the engine -----------------------------------
+  await navigateHome(page);
+  const safeIdsBefore = await sessionIds();
+  await startReview(path.join(FIXTURES, "buggy"), "folder", { preset: "Safe mode", scanMode: "Deep review" });
+  const safeResults = await waitForResults();
+  const safeDetail = await readFinishedSession(safeIdsBefore);
+  // The app's state summary counts a capped-out defect separately from a
+  // validated one, and says so as a candidate. The budget is therefore compared
+  // against the findings the engine actually returned, not that mixed total: the
+  // defects Safe mode chooses not to assert are still visible as candidates.
+  record(
+    "Preset changes the finding budget",
+    safeDetail.findings.length > 0 && safeDetail.findings.length < folderDetail.findings.length ? "PASS" : "FAIL",
+    `Safe mode returned ${safeDetail.findings.length} finding(s) where Balanced returned ${folderDetail.findings.length} for the same folder; the difference is visible as candidates (${safeDetail.session.candidate_findings_count} vs ${folderDetail.session.candidate_findings_count})`,
+  );
+  note(`safe mode digest: ${resultsDigest(safeResults)}`);
+
+  // ---- 9. Real model accuracy against the fixture's own ground truth ------
+  const groundTruth = readGroundTruthFiles();
+  const groundTruthRepo = path.join(FIXTURES, "ai-review", "repo");
+  if (groundTruth.length === 0 || !existsSync(groundTruthRepo)) {
+    record("Real AI accuracy against ground truth", "NOT RUN", "the ai-review fixture repository is not present");
+  } else {
+    // The setup screen lists three recent sources at a time, so the source this
+    // check needs is seeded immediately before it, sorted first.
+    await seedRecent([
+      { path: FIXTURES + "\\ai-review\\repo", type: "folder", workspace: "ai-review" },
+      { path: FIXTURES + "\\buggy", type: "folder", workspace: "fixtures" },
+    ]);
+    const truthIdsBefore = await sessionIds();
+    await startReview(groundTruthRepo, "folder", { preset: "Balanced", scanMode: "Deep review" });
+    const truthResults = await waitForResults();
+    const truthDetail = await readFinishedSession(truthIdsBefore);
+    const reportedFiles = truthDetail.findings.map((finding) => finding.file);
+    const covered = groundTruth.filter((file) => reportedFiles.some((seen) => seen.endsWith(file)));
+    const missed = groundTruth.filter((file) => !covered.includes(file));
+    // The ground truth file sits above the reviewed scope on purpose, so a
+    // finding that mentions it (or walks out of the scope) escaped the selection.
+    const escaped = reportedFiles.filter((file) => file.includes("GROUND_TRUTH") || file.includes(".."));
+
+    record(
+      "Real AI accuracy against ground truth",
+      covered.length > 0 && escaped.length === 0 ? "PASS" : "FAIL",
+      `${covered.length}/${groundTruth.length} planted defects surfaced in ${truthDetail.findings.length} finding(s) with ${truthDetail.session.candidate_findings_count} candidate(s) dropped by the review bar; missed: ${missed.join(", ") || "none"}; ${escaped.length} finding(s) referenced code outside the selected scope`,
+    );
+    // Why the review bar dropped a candidate is the difference between "the model
+    // found nothing" and "the model's finding did not survive validation", so the
+    // reasons the app prints are recorded next to the score.
+    const candidateReasons =
+      resultsDigest(truthResults)
+        .split(" | ")
+        .filter((line) => /dropped|not in source|over finding cap/i.test(line))
+        .join(" | ") || "no candidate reason was printed";
+    note(`ground truth candidate reasons: ${candidateReasons}`);
+    note(`ground truth digest: ${resultsDigest(truthResults)}`);
+    note(`ground truth missed files: ${missed.join(", ") || "none"}`);
+  }
+
+  // ---- 10. Every review this session started ------------------------------
+  record(
+    "No review was refused while another was claimed",
+    refusedReviews.length === 0 ? "PASS" : "FAIL",
+    refusedReviews.length === 0
+      ? `${startedReviews} review(s) ran back to back in one app session with no 409`
+      : `${refusedReviews.length} refusal(s): ${refusedReviews.join(" | ")}`,
+  );
 }
 
 /** Returns to the review setup screen through the sidebar action the app exposes. */

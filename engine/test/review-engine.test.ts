@@ -287,6 +287,25 @@ describe("ReviewEngine with a diff", () => {
       "src/paging.ts::js.off-by-one-loop-bound",
     ]);
   });
+
+  it("does not anchor a plain review to the repository's base branch", async () => {
+    // The stub repository always offers `main` and the target is inside it, which
+    // is the ordinary case for any project under version control. A review that
+    // was not asked to diff must still report every defect: anchoring to changed
+    // lines is a diff-review behaviour, not a default, and defaulting to it turns
+    // every unchanged finding into a false negative.
+    const report = await engineFor({ git: stubGit() }).review({ target: DIFF_ROOT });
+
+    expect(report.scope.diffAware).toBe(false);
+    expect(report.scope.baseBranch).toBeNull();
+    // The repository is still detected, because paths are named against it.
+    expect(report.scope.branch).toBe("feature/paging");
+    expect(report.rejected.every((entry) => entry.reason !== "anchor-outside-changed-lines")).toBe(true);
+    expect(pairs(report).sort()).toEqual([
+      "src/paging.ts::js.numeric-sort-without-comparator",
+      "src/paging.ts::js.off-by-one-loop-bound",
+    ]);
+  });
 });
 
 describe("ReviewEngine scope containment", () => {

@@ -176,7 +176,7 @@ clear.
 ## Testing
 
 ```bash
-cd engine   && bun run typecheck && bun test    # 162 tests
+cd engine   && bun run typecheck && bun test    # 171 tests
 cd frontend && bun run test                     # 69 tests
 ```
 
