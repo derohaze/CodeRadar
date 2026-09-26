@@ -1,4 +1,4 @@
-import type { ReviewLimitationSummary, ReviewState } from "@/shared/api/security";
+import type { ReviewLimitationSummary, ReviewState } from "@/shared/api";
 
 /**
  * Reading a review's own state.

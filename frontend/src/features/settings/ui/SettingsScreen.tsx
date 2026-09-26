@@ -13,9 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/sonner";
 import { ProviderBadge } from "@/components/core/provider-logo";
-import type { RuntimeSettings, UpdateRuntimeSettingsPayload } from "@/shared/api/security";
-import { listProviders, listProviderModels, testProvider } from "@/shared/api/security";
-import type { ProviderInfo } from "@/shared/api/security";
+import type { RuntimeSettings, UpdateRuntimeSettingsPayload } from "@/shared/api";
+import { listProviders, listProviderModels, testProvider } from "@/shared/api";
+import type { ProviderInfo } from "@/shared/api";
 import { toAnalystCopy } from "@/shared/lib/analyst-copy";
 
 interface SettingsScreenProps {

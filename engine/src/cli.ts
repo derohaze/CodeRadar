@@ -15,7 +15,8 @@
 import path from "node:path";
 import { createNodeFileSystem } from "./adapters/node-fs.ts";
 import { createNodeGit } from "./adapters/node-git.ts";
-import { createHttpAiReviewer, AiReviewerError } from "./core/review/ai-reviewer.ts";
+import { createHttpAiReviewer } from "./clients/http-ai-reviewer.ts";
+import { AiReviewerError } from "./core/review/ai-reviewer.ts";
 import { ReviewEngine } from "./core/review/engine.ts";
 import type { AiReviewerPort, ReviewEvent } from "./core/ports.ts";
 import type { ReviewFinding, ReviewReport, ReviewSeverity } from "./core/findings/model.ts";

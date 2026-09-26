@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { explainFinding, getRepoHotspots, getScanSession } from "./security";
+import { explainFinding, getRepoHotspots, getScanSession } from "./index";
 
-describe("security API error handling", () => {
+describe("review API error handling", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });

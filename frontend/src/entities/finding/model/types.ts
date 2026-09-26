@@ -60,7 +60,20 @@ export interface PolicySummary {
   summary: string;
   autoPathState: "eligible" | "gated" | "forbidden";
   humanPathState: "standard-review" | "approval-required" | "approved-review-cycle" | "escalated-review" | "regenerate-required";
-  nextControl: "continue-standard-review" | "collect-approval" | "proceed-with-local-apply" | "resolve-escalation" | "generate-a-stronger-patch";
+  /**
+   * `proceed-with-workspace-apply` is what this app's own policy engine emits
+   * (`lib/policy-engine.ts`); the engine's wire contract names the same step
+   * `proceed-with-local-apply`. Both are accepted here rather than renaming one:
+   * the value is what this app produces, and a rename would change the meaning of
+   * a summary that is already stored.
+   */
+  nextControl:
+    | "continue-standard-review"
+    | "collect-approval"
+    | "proceed-with-local-apply"
+    | "proceed-with-workspace-apply"
+    | "resolve-escalation"
+    | "generate-a-stronger-patch";
 }
 
 export interface RemediationExplanation {

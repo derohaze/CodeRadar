@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createSourceFile, createSourceIndex } from "../src/core/repository/source.ts";
-import { validateCandidate, findingId, isEvidenceAnchored } from "../src/core/findings/validate.ts";
+import { validateCandidate, findingId } from "../src/core/findings/validate.ts";
+import { isEvidenceAnchored } from "../src/core/findings/evidence.ts";
 import type { CandidateFinding } from "../src/core/findings/validate.ts";
 import {
   CONFIDENCE_FLOOR,

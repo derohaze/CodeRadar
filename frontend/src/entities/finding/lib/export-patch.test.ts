@@ -21,6 +21,8 @@ describe("buildPatchExportBundle", () => {
         auditLog: [],
         fixSuggestions: [],
         remediationStatus: "verified_partial",
+        approvalStatus: "not_required",
+        approvalHistory: [],
         appliedStrategyId: "strategy-1",
         remediationNotes: [],
         attemptedStrategyIds: [],

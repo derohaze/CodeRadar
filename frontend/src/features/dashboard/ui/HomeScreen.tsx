@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TextMorph } from "@/components/core/text-morph";
 import { basename } from "@/features/dashboard/model/home-screen.utils";
 import { useHomeScreen } from "@/features/dashboard/model/useHomeScreen";
-import type { StartScanPayload } from "@/shared/api/security";
+import type { StartScanPayload } from "@/shared/api";
 import { Loader } from "@/shared/ui/Loader";
 
 interface HomeScreenProps {

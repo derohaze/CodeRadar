@@ -21,7 +21,7 @@ import {
   getReviewStateLabel,
   isReviewComplete,
 } from "@/entities/session/lib/review-state";
-import type { RejectedCandidateSummary, ReviewLimitationSummary, ScanSessionDetail } from "@/shared/api/security";
+import type { RejectedCandidateSummary, ReviewLimitationSummary, ScanSessionDetail } from "@/shared/api";
 import { toAnalystCopy } from "@/shared/lib/analyst-copy";
 import { CopyButton } from "@/shared/ui/CopyButton";
 

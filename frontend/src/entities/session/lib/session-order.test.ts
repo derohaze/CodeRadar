@@ -26,6 +26,7 @@ function buildSession(id: string): Session {
     runtimeMetrics: null,
     scanPlan: null,
     repositorySummary: null,
+    analysisBrief: null,
     repositoryInventory: null,
     frameworkProfile: null,
     repositoryGraph: null,

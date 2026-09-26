@@ -3,7 +3,8 @@ import path from "node:path";
 import { createNodeFileSystem } from "../src/adapters/node-fs.ts";
 import type { ReviewLimitation, ReviewState } from "../src/core/findings/model.ts";
 import type { AiReviewerPort, ReviewEvent } from "../src/core/ports.ts";
-import { createHttpAiReviewer, createStaticAiReviewer } from "../src/core/review/ai-reviewer.ts";
+import { createStaticAiReviewer } from "../src/core/review/ai-reviewer.ts";
+import { createHttpAiReviewer } from "../src/clients/http-ai-reviewer.ts";
 import { ReviewEngine } from "../src/core/review/engine.ts";
 import { collectLimitations, resolveReviewState } from "../src/core/review/limitations.ts";
 

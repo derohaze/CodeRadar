@@ -26,6 +26,7 @@ function buildSession(overrides: Partial<Session> = {}): Session {
     runtimeMetrics: null,
     scanPlan: null,
     repositorySummary: null,
+    analysisBrief: null,
     repositoryInventory: null,
     frameworkProfile: null,
     repositoryGraph: null,

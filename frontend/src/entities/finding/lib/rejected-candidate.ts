@@ -1,4 +1,4 @@
-import type { RejectedCandidateSummary } from "@/shared/api/security";
+import type { RejectedCandidateSummary } from "@/shared/api";
 
 /**
  * Wording and grouping for candidates the review bar dropped.

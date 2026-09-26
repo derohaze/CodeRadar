@@ -11,7 +11,8 @@ import {
 } from "../src/adapters/node-replay.ts";
 import type { ReviewReport } from "../src/core/findings/model.ts";
 import type { AiReviewerPort } from "../src/core/ports.ts";
-import { createHttpAiReviewer, createStaticAiReviewer } from "../src/core/review/ai-reviewer.ts";
+import { createStaticAiReviewer } from "../src/core/review/ai-reviewer.ts";
+import { createHttpAiReviewer } from "../src/clients/http-ai-reviewer.ts";
 import { ReviewEngine } from "../src/core/review/engine.ts";
 import {
   ReplayMissError,

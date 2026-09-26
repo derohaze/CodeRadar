@@ -1,7 +1,14 @@
 import { DecryptedText } from "./DecryptedText";
-import type { WorkspaceMode } from "@/shared/types/app";
 
-export function BrandModeHeading({ mode = "security" }: { mode?: WorkspaceMode }) {
+/**
+ * The modes this heading can name. Local to the component on purpose: nothing
+ * sets it yet — its only caller renders the default — so it is not app-wide
+ * vocabulary, and promoting it to `shared/types/app` before anything uses it
+ * would invent a concept the router does not have.
+ */
+export type BrandMode = "security" | "builder";
+
+export function BrandModeHeading({ mode = "security" }: { mode?: BrandMode }) {
   const text = mode === "builder" ? "Archive" : "";
 
   return (

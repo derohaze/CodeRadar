@@ -24,6 +24,8 @@ function buildFinding(id: string, triageRank: number, riskScore: number, severit
     auditLog: [],
     fixSuggestions: [],
     remediationStatus: "open",
+    approvalStatus: "not_required",
+    approvalHistory: [],
     appliedStrategyId: null,
     remediationNotes: [],
     attemptedStrategyIds: [],

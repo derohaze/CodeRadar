@@ -29,6 +29,7 @@ function buildFinding(overrides: Partial<Finding> = {}): Finding {
     appliedStrategyId: null,
     remediationNotes: [],
     attemptedStrategyIds: [],
+    decisionSummary: null,
     ...overrides,
   };
 }

@@ -1,4 +1,4 @@
-import type { ScanSessionDetail } from "@/shared/api/security";
+import type { ScanSessionDetail } from "@/shared/api";
 
 export interface RepoIntelligenceLedgerItem {
   ledgerClass: "framework-footprint" | "service-graph" | "segmentation" | "registry" | "coverage";

@@ -19,7 +19,8 @@
 import path from "node:path";
 import { createNodeFileSystem } from "../adapters/node-fs.ts";
 import { createNodeGit } from "../adapters/node-git.ts";
-import { AiReviewerError, createHttpAiReviewer } from "../core/review/ai-reviewer.ts";
+import { createHttpAiReviewer } from "../clients/http-ai-reviewer.ts";
+import { AiReviewerError } from "../core/review/ai-reviewer.ts";
 import { AI_NOT_REQUESTED_DETAIL, AI_UNAVAILABLE_DETAIL, withLimitation } from "../core/review/limitations.ts";
 import { ReviewEngine } from "../core/review/engine.ts";
 import type { ReviewReport } from "../core/findings/model.ts";

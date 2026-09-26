@@ -23,7 +23,7 @@
 import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { startReviewApiServer } from "./api-server.ts";
+import { startReviewApiServer } from "./api/server.ts";
 import { createLocalKeyCipher } from "./local-cipher.ts";
 import { createReviewService, resolvePromptsDir } from "./service.ts";
 import { createSettingsStore } from "./settings.ts";

@@ -6,7 +6,7 @@ import {
   ProgressBarTrack,
   ProgressBarValue,
 } from "@/components/ui/progress-bar";
-import type { ScanSessionDetail } from "@/shared/api/security";
+import type { ScanSessionDetail } from "@/shared/api";
 import { toAnalystCopy } from "@/shared/lib/analyst-copy";
 import { ThinkingOrb } from "@/shared/ui/ThinkingOrb";
 import type { ThinkingOrbState } from "@/shared/ui/thinking-orbs";

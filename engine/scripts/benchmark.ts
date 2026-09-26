@@ -50,7 +50,7 @@ import { createNodeReplayKey, createNodeReplayStore } from "../src/adapters/node
 import { writeFileSync } from "node:fs";
 import type { ReviewFileTrace, ReviewReport } from "../src/core/findings/model.ts";
 import type { AiReviewerPort } from "../src/core/ports.ts";
-import { createHttpAiReviewer } from "../src/core/review/ai-reviewer.ts";
+import { createHttpAiReviewer } from "../src/clients/http-ai-reviewer.ts";
 import { ReviewEngine } from "../src/core/review/engine.ts";
 import {
   createRecordingReviewer,

@@ -56,15 +56,16 @@ export {
   compareFindings,
 } from "./core/findings/policy.ts";
 
+// Policy of a run: how wide it casts, and how its stages are reported
+export { findingBudgetForPreset, reviewPhaseForEvent } from "./core/review/policy.ts";
+export type { ReviewBreadthPreset, ReviewPhase } from "./core/review/policy.ts";
+
 // Validation
-export {
-  MAX_ANCHOR_LINES,
-  extractEvidenceQuotes,
-  isEvidenceAnchored,
-  findingId,
-  validateCandidate,
-} from "./core/findings/validate.ts";
+export { MAX_ANCHOR_LINES, findingId, validateCandidate } from "./core/findings/validate.ts";
 export type { CandidateFinding, ValidationOutcome, ValidateOptions } from "./core/findings/validate.ts";
+
+// The evidence gate, kept apart from the checks that decide what a finding is.
+export { extractEvidenceQuotes, isEvidenceAnchored } from "./core/findings/evidence.ts";
 
 // Deduplication
 export { dedupeFindings, tokenSimilarity, tokenise } from "./core/findings/dedupe.ts";
@@ -89,14 +90,17 @@ export type {
 
 // Model access and prompt handling
 export {
-  createHttpAiReviewer,
   createStaticAiReviewer,
   parseReviewResponse,
   redactSecrets,
   extractJsonObject,
   AiReviewerError,
 } from "./core/review/ai-reviewer.ts";
-export type { HttpAiReviewerOptions, ParsedReviewResponse } from "./core/review/ai-reviewer.ts";
+export type { ParsedReviewResponse } from "./core/review/ai-reviewer.ts";
+
+// The outbound provider client: an adapter around the core's `AiReviewerPort`.
+export { createHttpAiReviewer } from "./clients/http-ai-reviewer.ts";
+export type { HttpAiReviewer, HttpAiReviewerOptions, RetryInfo } from "./clients/http-ai-reviewer.ts";
 export { loadPromptBundle, REQUIRED_PROMPT_FILES } from "./core/review/prompts.ts";
 export { buildSystemPrompt, buildUserPrompt, formatLineRanges } from "./core/review/prompt.ts";
 export type { ReviewerPromptInput, SystemPromptInput } from "./core/review/prompt.ts";

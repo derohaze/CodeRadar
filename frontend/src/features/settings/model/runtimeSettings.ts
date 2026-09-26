@@ -4,7 +4,7 @@ import {
   updateRuntimeSettings,
   type RuntimeSettings,
   type UpdateRuntimeSettingsPayload,
-} from "@/shared/api/security";
+} from "@/shared/api";
 
 export const SIDEBAR_COLLAPSED_STORAGE_KEY = "coderadar.sidebar.collapsed";
 
@@ -125,7 +125,7 @@ export function useRuntimeSettings() {
       // keep local theme choice as source of truth
       if ((patch as Record<string, unknown>).theme) {
         const t = (patch as Record<string, unknown>).theme as RuntimeSettings["theme"];
-        (persisted as Record<string, unknown>).theme = t;
+        (persisted as unknown as Record<string, unknown>).theme = t;
         try {
           window.localStorage.setItem(THEME_STORAGE_KEY, t);
         } catch {

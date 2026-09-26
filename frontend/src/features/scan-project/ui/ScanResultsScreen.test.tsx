@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { ScanResultsScreen } from "./ScanResultsScreen";
-import type { ScanSessionDetail } from "@/shared/api/security";
+import type { ScanSessionDetail } from "@/shared/api";
 
 vi.mock("framer-motion", () => ({
   motion: {

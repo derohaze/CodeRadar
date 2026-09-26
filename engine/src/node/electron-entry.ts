@@ -47,8 +47,8 @@ export type {
   ReviewServiceResult,
 } from "./service.ts";
 
-export { startReviewApiServer } from "./api-server.ts";
-export type { ReviewApiServer, ReviewApiServerOptions } from "./api-server.ts";
+export { startReviewApiServer } from "./api/server.ts";
+export type { ReviewApiServer, ReviewApiServerOptions } from "./api/server.ts";
 
 export { buildWireScanDetail, buildWireSession, toWireFinding } from "./api-contract.ts";
 export type { WireFinding, WireScanDetail, WireSession } from "./api-contract.ts";

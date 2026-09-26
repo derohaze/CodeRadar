@@ -102,7 +102,15 @@ export function buildPatchDecisionSummary({
     stopState: findingDecision?.stopState ?? "continue-remediation",
     applyReadiness: findingDecision?.applyReadiness ?? "local-apply-eligible",
     escalationState: findingDecision?.escalationState ?? "none",
-    policySummary: findingDecision?.policySummary ?? buildPolicySummary(finding ?? buildFallbackFindingForApprovalAudit(), touchesIdentity, riskScore),
+    // `buildPolicySummary` takes a fourth argument, `safeAutoPath`, that this call
+    // never supplied — so it has always been `undefined` here, and every branch
+    // that reads it treats that as false. Passing `false` keeps behaviour
+    // identical and makes the call honest. Whether this path *should* pass the
+    // `safeAutoPath` that `buildPolicyOutcome` computes is a product decision, not
+    // a refactor: it changes the summary a reviewer reads.
+    policySummary:
+      findingDecision?.policySummary ??
+      buildPolicySummary(finding ?? buildFallbackFindingForApprovalAudit(), touchesIdentity, riskScore, false),
     recommendedAction: buildPatchRecommendedAction({ selectedStrategy, patch, findingDecision }),
     approvalPath: buildPatchApprovalPath({
       severity: finding?.severity ?? "medium",

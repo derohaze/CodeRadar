@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { FileStack, GitBranch, Layers3, ShieldCheck } from "lucide-react";
 import { buildRepoHotspots, summarizeRepoHotspots } from "@/features/repo-overview/lib/repo-intelligence";
 import { buildRepoIntelligenceLedger, summarizeRepoIntelligenceLedger } from "@/features/repo-overview/lib/repo-intelligence-ledger";
-import type { ScanSessionDetail, WorkflowRepoHotspotItem, WorkflowRepoIntelligenceSummary } from "@/shared/api/security";
+import type { ScanSessionDetail, WorkflowRepoHotspotItem, WorkflowRepoIntelligenceSummary } from "@/shared/api";
 
 interface Props {
   session: ScanSessionDetail | null;

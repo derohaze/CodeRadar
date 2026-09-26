@@ -15,7 +15,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { startReviewApiServer, type ReviewApiServer } from "../src/node/api-server.ts";
+import { startReviewApiServer, type ReviewApiServer } from "../src/node/api/server.ts";
 import { createReviewService } from "../src/node/service.ts";
 import { createSettingsStore } from "../src/node/settings.ts";
 import type { GitPort } from "../src/core/ports.ts";

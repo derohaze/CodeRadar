@@ -19,27 +19,23 @@ import { Sidebar } from "@/features/sidebar-navigation";
 import { RepoOverviewScreen } from "@/features/repo-overview";
 import type { Finding } from "@/entities/finding/model/types";
 import type { Session } from "@/entities/session/model/types";
-import { mergeSessionOrder } from "@/entities/session/lib/session-order";
+import { useScanStream } from "@/pages/home/model/useScanStream";
+import { useWorkspaceSessions } from "@/pages/home/model/useWorkspaceSessions";
 import {
-  deleteAllScanSessions,
   deleteScanSession,
   getRepoHotspots,
   getRepoIntelligenceSummary,
   getScanSession,
-  listSessions,
   startScan,
-  subscribeToScanEvents,
   type ScanSessionDetail,
   type StartScanPayload,
   type WorkflowRepoHotspotItem,
   type WorkflowRepoIntelligenceSummary,
-} from "@/shared/api/security";
+} from "@/shared/api";
 import { Loader } from "@/shared/ui/Loader";
 import { toAnalystCopy } from "@/shared/lib/analyst-copy";
 import type { AppScreen, AppView } from "@/shared/types/app";
 import { AppShell } from "@/widgets/app-shell";
-
-type DeleteTarget = { type: "single"; session: Session } | { type: "all" };
 
 export default function Page() {
   const [screen, setScreen] = useState<AppScreen>("home");
@@ -47,13 +43,9 @@ export default function Page() {
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<ScanSessionDetail | null>(null);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [sessionOrder, setSessionOrder] = useState<string[]>([]);
   const [pendingCompletionSessionId, setPendingCompletionSessionId] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [view, setView] = useState<AppView>("workspace");
-  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [repoIntelligenceSummary, setRepoIntelligenceSummary] = useState<WorkflowRepoIntelligenceSummary | null>(null);
   const [repoHotspotFeed, setRepoHotspotFeed] = useState<WorkflowRepoHotspotItem[] | null>(null);
   const {
@@ -70,35 +62,24 @@ export default function Page() {
     setScreen("scan-completed");
   }, [screen, sessionWorkspaceTabs]);
 
-  const mergeSessionSummary = useCallback((session: Session) => {
-    setSessions((current) => {
-      const existingIndex = current.findIndex((item) => item.id === session.id);
-      if (existingIndex === -1) return [session, ...current];
-      const next = [...current];
-      next[existingIndex] = session;
-      return next;
-    });
+  const resetActiveSessionState = useCallback(() => {
+    setActiveSessionId(null); setActiveSession(null); setSelectedFinding(null); setFindingOriginScreen(null); setPendingCompletionSessionId(null); setScreen("home");
   }, []);
 
-  const syncSessionOrder = useCallback((nextSessions: Session[]) => {
-    setSessionOrder((current) => mergeSessionOrder(current, nextSessions));
-  }, []);
-
-  const refreshSessions = useCallback(async () => {
-    try {
-      const nextSessions = await listSessions();
-      setSessions(nextSessions);
-      syncSessionOrder(nextSessions);
-    } catch (error) {
-      console.error("[CodeRadar] Failed to refresh sessions", error);
-      setSessions([]);
-      setSessionOrder([]);
-    }
-  }, [syncSessionOrder]);
-
-  useEffect(() => {
-    void refreshSessions();
-  }, [refreshSessions]);
+  const {
+    sessions,
+    sessionOrder,
+    mergeSessionSummary,
+    syncSessionOrder,
+    deleteTarget,
+    isDeleting,
+    requestDeleteSession: handleDeleteSession,
+    requestDeleteAllSessions: handleDeleteAllSessions,
+    dismissDeleteRequest,
+    confirmDelete,
+    reorderSessions: handleReorderSessions,
+    forgetSession,
+  } = useWorkspaceSessions({ activeSessionId, onActiveSessionRemoved: resetActiveSessionState });
 
   useEffect(() => {
     if (typeof document === "undefined" || typeof window === "undefined") return;
@@ -173,36 +154,20 @@ export default function Page() {
     return () => { isCancelled = true; };
   }, [activeSession, screen]);
 
-  useEffect(() => {
-    if (!activeSessionId || !activeSession) return;
-    if (!["queued", "scanning"].includes(activeSession.session.status)) return;
-    let isClosed = false;
-    let fallbackTimer: number | null = null;
-    let fallbackAttempt = 0;
-    const applyDetail = (detail: ScanSessionDetail) => {
-      setActiveSession((current) => (hasMeaningfulSessionChange(current, detail) ? detail : current));
-      mergeSessionSummary(detail.session);
-      if (detail.session.status === "completed" && screen === "scan-progress") setPendingCompletionSessionId(detail.session.id);
-    };
-    const pollWithBackoff = () => {
-      if (isClosed) return;
-      const delay = fallbackAttempt < 2 ? 2500 : fallbackAttempt < 5 ? 4000 : 8000;
-      fallbackTimer = window.setTimeout(() => {
-        void getScanSession(activeSessionId).then((detail) => {
-          applyDetail(detail);
-          if (!["completed", "failed"].includes(detail.session.status)) { fallbackAttempt += 1; pollWithBackoff(); }
-        }).catch(() => { fallbackAttempt += 1; pollWithBackoff(); });
-      }, delay);
-    };
-    let cleanup = () => undefined;
-    if (typeof window !== "undefined" && "EventSource" in window) {
-      cleanup = subscribeToScanEvents(activeSessionId, { onSession: applyDetail, onTerminal: applyDetail, onError: () => { if (!isClosed) pollWithBackoff(); } });
-    } else pollWithBackoff();
-    return () => {
-      isClosed = true; cleanup();
-      if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
-    };
-  }, [activeSession, activeSessionId, mergeSessionSummary, screen]);
+  /**
+   * What one streamed (or polled) detail means for this screen.
+   *
+   * The identity of this callback is what scopes the subscription: it changes
+   * when `screen` does, so the stream is re-established on the same render that
+   * the inline effect used to re-run on.
+   */
+  const handleStreamDetail = useCallback((detail: ScanSessionDetail) => {
+    setActiveSession((current) => (hasMeaningfulSessionChange(current, detail) ? detail : current));
+    mergeSessionSummary(detail.session);
+    if (detail.session.status === "completed" && screen === "scan-progress") setPendingCompletionSessionId(detail.session.id);
+  }, [mergeSessionSummary, screen]);
+
+  useScanStream({ sessionId: activeSessionId, session: activeSession, onDetail: handleStreamDetail });
 
   useEffect(() => {
     if (!runtimeSettings.autoOpenResults) return;
@@ -257,38 +222,23 @@ export default function Page() {
     }
   }, [mergeSessionSummary]);
 
-  const resetActiveSessionState = useCallback(() => {
-    setActiveSessionId(null); setActiveSession(null); setSelectedFinding(null); setFindingOriginScreen(null); setPendingCompletionSessionId(null); setScreen("home");
-  }, []);
-
-  const handleDeleteSession = useCallback((session: Session) => setDeleteTarget({ type: "single", session }), []);
-  const handleDeleteAllSessions = useCallback(() => setDeleteTarget({ type: "all" }), []);
+  // The delete flow itself lives in the sessions hook; only its feedback and its
+  // dialog copy belong to the page.
   const handleConfirmDelete = useCallback(async () => {
-    if (!deleteTarget || isDeleting) return;
-    setIsDeleting(true);
     try {
-      if (deleteTarget.type === "single") {
-        await deleteScanSession(deleteTarget.session.id);
-        setSessions((c) => c.filter((i) => i.id !== deleteTarget.session.id));
-        setSessionOrder((c) => c.filter((id) => id !== deleteTarget.session.id));
-        if (activeSessionId === deleteTarget.session.id) resetActiveSessionState();
-        toast.success("The session was deleted successfully");
-      } else {
-        await deleteAllScanSessions();
-        setSessions([]); setSessionOrder([]); resetActiveSessionState();
-        toast.success("All review sessions were deleted successfully");
-      }
+      const deleted = await confirmDelete();
+      if (deleted === "single") toast.success("The session was deleted successfully");
+      else if (deleted === "all") toast.success("All review sessions were deleted successfully");
     } catch (error) {
       toast.error(toAnalystCopy(error instanceof Error ? error.message : "Unable to delete the review session"));
-    } finally { setIsDeleting(false); setDeleteTarget(null); }
-  }, [activeSessionId, deleteTarget, isDeleting, resetActiveSessionState]);
-  const handleReorderSessions = useCallback((ids: string[]) => setSessionOrder(ids), []);
+    }
+  }, [confirmDelete]);
 
   const renderContent = () => {
     switch (screen) {
       case "home": return <HomeScreen key="home" onStartScan={handleStartScan} defaultPreset={runtimeSettings.defaultPreset} defaultScanMode={runtimeSettings.defaultScanMode} />;
       case "scan-empty": return <ScanEmptyScreen key="scan-empty" onStartScan={() => setScreen("home")} />;
-      case "scan-progress": return <ScanProgressScreen key="scan-progress" session={activeSession} onStop={async () => { if (!activeSessionId) return; try { await deleteScanSession(activeSessionId); setSessions((c) => c.filter((i) => i.id !== activeSessionId)); setSessionOrder((c) => c.filter((id) => id !== activeSessionId)); setActiveSessionId(null); setActiveSession(null); setScreen("home"); toast.success("Review stopped"); } catch (e) { toast.error(toAnalystCopy(e instanceof Error ? e.message : "Unable to stop review")); } }} />;
+      case "scan-progress": return <ScanProgressScreen key="scan-progress" session={activeSession} onStop={async () => { if (!activeSessionId) return; try { await deleteScanSession(activeSessionId); forgetSession(activeSessionId); setActiveSessionId(null); setActiveSession(null); setScreen("home"); toast.success("Review stopped"); } catch (e) { toast.error(toAnalystCopy(e instanceof Error ? e.message : "Unable to stop review")); } }} />;
       case "scan-completed": return <ScanResultsScreen key="scan-results" session={activeSession} onSelectFinding={(f) => handleSelectFinding(f, "scan-completed")} />;
       case "finding-detail": return selectedFinding ? <FindingDetailPanel key="finding-detail" finding={selectedFinding} onDismiss={() => setScreen(findingOriginScreen === "repo-overview" ? "repo-overview" : "scan-completed")} onSuggestFix={() => {}} /> : null;
       case "repo-overview": return <RepoOverviewScreen key="repo-overview" session={activeSession} repoSummary={repoIntelligenceSummary} repoHotspotFeed={repoHotspotFeed} />;
@@ -313,7 +263,7 @@ export default function Page() {
           <SettingsScreen isSidebarCollapsed={isSidebarCollapsed} onBack={() => setView("workspace")} settings={runtimeSettings} isSaving={runtimeSettingsSaving || runtimeSettingsLoading} onPatchSettings={async (patch) => { try { await patchRuntimeSettings(patch);    } catch (e) { toast.error(toAnalystCopy(e instanceof Error ? e.message : "Unable to save runtime settings")); } }} />
         </div>
       )}
-      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open && !isDeleting) setDeleteTarget(null); }}>
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) dismissDeleteRequest(); }}>
         <AlertDialogContent className="max-w-[420px] rounded-[28px] border border-border-soft bg-surface p-0 shadow-[0_28px_80px_rgba(0,0,0,0.14)]">
           <div className="space-y-5 p-6">
             <AlertDialogHeader className="space-y-2 text-left">
