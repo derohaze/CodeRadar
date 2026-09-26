@@ -12,7 +12,6 @@ pro
 
 claude-code-main
 
-website
 .vscode
 node_modules
 dist
@@ -24,6 +23,10 @@ repos
 # run first. engine/prompts is the source of truth for the policy copy.
 frontend/electron/review-engine.cjs
 frontend/electron/prompts/
+
+# Output of `bun run gui:smoke`, written fresh on every run. It is a report about
+# one machine's run, not source, and reading it back is not part of any flow.
+frontend/gui-smoke-report.json
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
