@@ -1,0 +1,47 @@
+---
+title: Why live progress belongs in code review
+description: CodeRadar streams review progress as the engine walks the repository, so you see what is running instead of watching a spinner.
+date: 2026-07-01
+author: CodeRadar Team
+---
+
+Staring at a spinner is not meaningful work. It is usually a sign that the tool is not telling you what it is doing.
+
+A deep review moves through real stages. Discovery indexes files, mapping traces imports, segmentation narrows the scope, path tracing builds candidate flows, review reads the blocks, validation checks every claim, and scoring finalizes the report.
+
+CodeRadar treats live visibility as part of review quality.
+
+## Updates that should not wait
+
+Some changes are important enough to be visible as soon as they matter:
+
+- A new file batch enters review.
+- A candidate path is prepared.
+- A block finishes reviewing.
+- A candidate is validated or dropped.
+- Coverage crosses a threshold.
+- A provider degrades to deterministic checks.
+- The report state resolves to complete, partial, or degraded.
+
+When these updates are visible in the working surface, reviewers spend less time wondering and more time deciding.
+
+## Live is about trust
+
+Live updates are not about decoration. They are about reducing uncertainty.
+
+| Without live visibility | With live visibility |
+| --- | --- |
+| You refresh and hope. | You see the phase, counters, and current file. |
+| A stall looks like a hang. | A stall names the stage that stopped reporting. |
+| Provider outages look like clean runs. | Degradation is announced on the stream. |
+| Coverage gaps hide. | Truncation is reported as truncation. |
+
+The value is calmer review. A developer who trusts the progress stream can focus on the findings instead of verifying whether the review actually ran.
+
+## One orb per kind of work
+
+Each phase shows its own Thinking Orbs animation — working, searching, shaping, composing, solving, listening — so the indicator reflects the actual activity instead of a generic spinner.
+
+## The CodeRadar outcome
+
+The best progress screen is not the one with the most motion. It is the one that helps you notice the right change at the right time — and proves, line by line, that the review really happened.

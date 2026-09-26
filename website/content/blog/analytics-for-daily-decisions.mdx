@@ -1,0 +1,30 @@
+---
+title: Review metrics that support decisions
+description: CodeRadar scores reviews against planted defects and negative controls, so precision and recall mean something.
+date: 2026-06-18
+author: CodeRadar Team
+---
+
+A findings count is not a metric. Ten findings can be excellent or catastrophic — what matters is which defects were caught, which were missed, and what was falsely accused.
+
+CodeRadar approaches scoring as part of review quality: every run is measured against ground truth, not vibes.
+
+## What gets measured
+
+- Detected vs. missed planted defects (nine, with line anchors).
+- True vs. false positives, including negative-control leaks.
+- Unsupported claims, duplicate anchors, unanchorable findings.
+- Parser and provider failures, model coverage, precision and recall.
+- Per-defect diagnosis: sent, parsed, evidenced, validated, deduped.
+
+A claim that died reports exactly one stage — `not-sent`, `context-truncated`, `parser-dropped`, `evidence-mismatch`, `validator-rejected`, `policy-rejected`, or `model-missed` — because those are different jobs for different owners.
+
+## The anchor rule
+
+A finding is credited only when it names the defect's file and its own range overlaps the defect anchor. Naming the right file at the wrong line is not a detection.
+
+CodeRadar reports are intended to support decisions, not decorate a screen. A score is valuable when it tells the team what to fix, what to re-run, and what to trust.
+
+## The CodeRadar outcome
+
+For CodeRadar, metrics are not a separate destination. They are the management layer of the same review work that happens every day: measured offline with replay, benchmarked per model, and honest about what was not measured at all.

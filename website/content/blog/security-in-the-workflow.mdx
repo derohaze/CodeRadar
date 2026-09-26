@@ -1,0 +1,27 @@
+---
+title: Security built into the review workflow
+description: CodeRadar builds token hygiene, loopback binding, and least-privilege review into everyday use.
+date: 2026-05-20
+author: CodeRadar Team
+---
+
+A review tool reads your source tree and can send it to a model provider. That makes its own security part of product quality — not a separate concern for later.
+
+CodeRadar approaches security as the workflow itself: safe defaults, explicit boundaries, loud failures.
+
+## What the workflow enforces
+
+- The local API binds to 127.0.0.1 only — never the network.
+- Every data route requires a per-launch token that is never written to disk.
+- Origin is checked against the app's own origins; CORS is never a wildcard.
+- Host must be loopback, refusing DNS-rebinding requests.
+- Provider URLs must be https unless loopback, with no credentials or private addresses.
+- API keys use the OS keychain — or the app refuses to save them.
+
+## Balance, not friction
+
+CodeRadar is designed around that balance: useful visibility for the work, careful limits around the data, and accountability for important actions. Controls close specific holes; the report names each one.
+
+## The CodeRadar outcome
+
+For CodeRadar, safer workflows mean teams can review daily while keeping code, keys, and provider traffic inside boundaries they chose.

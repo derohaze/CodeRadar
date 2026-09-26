@@ -1,0 +1,66 @@
+import { getBlogPosts } from '@/lib/blog';
+import { siteConfig, repoUrl } from '@/lib/site';
+
+export async function GET(): Promise<Response> {
+  const posts = await getBlogPosts();
+  const lines = [
+    '# CodeRadar',
+    '',
+    '> CodeRadar is an open-source, local-first code review desktop app. Point it at a file or folder and it reports the defects it can prove — each with quoted evidence, consequence if it ships, and a concrete fix.',
+    '',
+    `- Website: ${siteConfig.url}`,
+    `- Repository: ${repoUrl}`,
+    `- Features: ${siteConfig.url}/features`,
+    `- About: ${siteConfig.url}/about`,
+    `- Blog: ${siteConfig.url}/blog`,
+    `- Blog RSS: ${siteConfig.url}/blog/rss.xml`,
+    `- Pricing: ${siteConfig.url}/pricing`,
+    `- Sitemap: ${siteConfig.url}/sitemap.xml`,
+    `- Terms: ${siteConfig.url}/terms`,
+    `- Privacy: ${siteConfig.url}/privacy`,
+    '',
+    '## What is CodeRadar?',
+    '',
+    'CodeRadar is a local-first code review desktop app (Electron + Node.js + TypeScript). It reads a file or folder and reports defects it can prove, with quoted evidence, consequence, and fix. Everything runs on the user machine; AI review via OpenAI-compatible providers is opt-in.',
+    '',
+    '## Who is CodeRadar for?',
+    '',
+    'CodeRadar is for developers and teams who want code review with proof: evidence-gated findings, dropped-candidate transparency, honest review states, CLI gating, and ground-truth scoring — without sending code anywhere by default.',
+    '',
+    '## Core Features',
+    '',
+    '- Evidence-gated findings: quote must exist in the named file at a real line',
+    '- Deterministic detectors that run offline with no key',
+    '- Opt-in OpenAI-compatible AI review, key live-tested then encrypted in OS keychain',
+    '- Dropped candidates listed with rejection reasons',
+    '- Review states: complete, partial, degraded, failed',
+    '- Six Thinking Orbs progress states mapped to review phases',
+    '- CLI one-shot reviews with --changed-only, --fail-on, --json',
+    '- Ground-truth scoring (9 planted defects, 10 negative controls) and offline replay',
+    '- Agent-ready fix prompts for Codex, Claude, Cursor',
+    '- Locked-down local API: 127.0.0.1, per-launch token, Origin/Host checks',
+    '',
+    '## The review contract',
+    '',
+    'Authority is the code, not the model. A model proposes a candidate; the system decides whether it is a finding. A failed model call degrades to deterministic checks, never to a failed review. A finding scores only on file plus anchor overlap.',
+    '',
+    '## Direct Answers',
+    '',
+    '- What is CodeRadar? An open-source, local-first code review app that proves every finding.',
+    '- Who made CodeRadar? An independent open-source project; the repo is public.',
+    '- Does my code leave my machine? Only to a provider you configure; by default nothing leaves disk.',
+    '- Do I need AI? No. Deterministic detectors always run; AI adds depth.',
+    '- How much does it cost? Nothing. Bring your own provider key if you want AI.',
+    '',
+    '## Blog',
+    '',
+    ...posts.map((post) => `- [${post.data.title}](${siteConfig.url}${post.url}): ${post.data.description ?? 'CodeRadar notes.'}`),
+  ];
+
+  return new Response(lines.join('\n'), {
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'public, max-age=3600, s-maxage=86400',
+    },
+  });
+}

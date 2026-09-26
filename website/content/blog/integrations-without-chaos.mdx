@@ -1,0 +1,29 @@
+---
+title: Provider integrations without chaos
+description: CodeRadar keeps model providers interchangeable by fixing the pipeline and swapping only the reasoning layer.
+date: 2026-06-04
+author: CodeRadar Team
+---
+
+Every provider speaks differently: endpoints, auth shapes, rate limits, output quirks. Left unmanaged, each new model means a new snowflake integration and a new definition of "finding."
+
+CodeRadar treats providers as replaceable reasoning layers inside one fixed pipeline.
+
+## One pipeline, many models
+
+The same prompt policy, context builder, parser, evidence gate, validator, dedupe, confidence policy, report contract, and scorer serve every model. Only the provider changes.
+
+Each provider speaks differently. CodeRadar's role is to organize model output into a consistent review language: candidates in, validated findings out, rejections explained.
+
+## Ownership is explicit
+
+- Provider config: endpoint, key, model — live-tested before save.
+- Keys: encrypted in the OS keychain, masked when listed.
+- Recordings: local-only replay store, never committed.
+- Failures: per-attempt telemetry with outcome, status, and token totals — never prompts or bodies.
+
+That is the purpose of integration work inside CodeRadar: connected providers, clear ownership, and less chaos in the daily review.
+
+## The CodeRadar outcome
+
+Benchmark every model through the same bar, keep per-model rows without rankings or winners, and never let a provider change what counts as proof.

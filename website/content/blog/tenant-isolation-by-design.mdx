@@ -1,0 +1,24 @@
+---
+title: Local-first isolation by design
+description: Why CodeRadar treats your machine as the trust boundary and keeps review data there.
+date: 2026-05-13
+author: CodeRadar Team
+---
+
+For CodeRadar, isolation is not a setting. It is the architecture: your machine is the trust boundary, and review data stays inside it.
+
+Each run needs confidence that its sources, findings, keys, and recordings remain in the correct place — never in a shared bucket, never in a log, never in a commit.
+
+## What stays where
+
+- Source code: read from disk, never uploaded except to a provider you configure.
+- API tokens: per-launch, in memory, never on disk.
+- Provider keys: OS keychain or nothing.
+- Replay recordings: local `.coderadar/` directory, gitignored, owner-only.
+- Run telemetry: counts and identifiers only — no prompts, no bodies, no credentials.
+
+CodeRadar is designed to make data ownership visible and consistent. That structure supports clearer review, safer provider use, and audits that end with evidence instead of assumptions.
+
+## The CodeRadar outcome
+
+For CodeRadar, local-first isolation is part of what makes the app suitable as the daily review surface for teams that cannot — or will not — ship their code to someone else's cloud to be read.
