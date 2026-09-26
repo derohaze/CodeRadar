@@ -429,4 +429,43 @@ describe("parseReviewResponse", () => {
     expect(parsed.candidates).toEqual([]);
     expect(parsed.issues).toContain("response was not a JSON object");
   });
+
+  it("reads an answer the provider delivered in reasoning_content with no content", () => {
+    // The live case: one provider route returns the whole review in
+    // `reasoning_content` and leaves `content` empty. The answer is there and the
+    // only unusual thing is the field, so it is read — and recorded, so a trace
+    // never implies it came from `content`.
+    const review = '{"verdict":"approve","summary":"clean","findings":[]}';
+    for (const emptyContent of [null, ""]) {
+      const parsed = parseReviewResponse({
+        choices: [{ message: { content: emptyContent, reasoning_content: review }, finish_reason: "stop" }],
+      });
+
+      expect(parsed.verdict).toBe("approve");
+      expect(parsed.summary).toBe("clean");
+      expect(parsed.answerField).toBe("reasoning-content");
+      expect(parsed.issues).toContain("the answer arrived in reasoning_content because content was absent");
+    }
+  });
+
+  it("never lets reasoning displace an answer the provider labelled content", () => {
+    // A chain of thought contains drafts the model may have rejected. It must never
+    // be able to outrank, or to add to, the answer the provider labelled `content`.
+    const parsed = parseReviewResponse({
+      choices: [
+        {
+          message: {
+            content: '{"verdict":"approve","summary":"the answer","findings":[]}',
+            reasoning_content:
+              '{"verdict":"needs-attention","summary":"a draft","findings":[{"file":"a.ts","line":1,"title":"draft"}]}',
+          },
+        },
+      ],
+    });
+
+    expect(parsed.summary).toBe("the answer");
+    expect(parsed.candidates).toEqual([]);
+    expect(parsed.answerField).toBe("content");
+    expect(parsed.issues).toEqual([]);
+  });
 });

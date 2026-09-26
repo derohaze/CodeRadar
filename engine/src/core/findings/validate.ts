@@ -72,8 +72,13 @@ export interface CandidateFinding {
   detector?: string;
 }
 
+/**
+ * The comparison travels with an accepted candidate as well as a rejected one,
+ * because a trace has to answer "why is this claim not in the report" and the
+ * quote-level answer is the same answer whether the candidate passed or failed.
+ */
 export type ValidationOutcome =
-  | { ok: true; finding: ReviewFinding }
+  | { ok: true; finding: ReviewFinding; comparison: EvidenceComparison }
   | { ok: false; rejected: RejectedCandidate };
 
 function rejectOutcome(
@@ -471,5 +476,5 @@ export function validateCandidate(
     ...(candidate.detector !== undefined ? { detector: candidate.detector } : {}),
   };
 
-  return { ok: true, finding };
+  return { ok: true, finding, comparison };
 }

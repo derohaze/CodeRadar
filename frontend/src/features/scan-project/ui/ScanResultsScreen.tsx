@@ -15,7 +15,13 @@ import {
 import type { RejectedCandidateGroup } from "@/entities/finding/lib/rejected-candidate";
 import type { SessionAnnotation } from "@/entities/session/model/types";
 import { SeverityBadge } from "@/entities/finding/ui/SeverityBadge";
-import type { RejectedCandidateSummary, ScanSessionDetail } from "@/shared/api/security";
+import {
+  describeReviewCompleteness,
+  getLimitationLabel,
+  getReviewStateLabel,
+  isReviewComplete,
+} from "@/entities/session/lib/review-state";
+import type { RejectedCandidateSummary, ReviewLimitationSummary, ScanSessionDetail } from "@/shared/api/security";
 import { toAnalystCopy } from "@/shared/lib/analyst-copy";
 import { CopyButton } from "@/shared/ui/CopyButton";
 
@@ -38,6 +44,12 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
   const rejectedCandidates = session.rejectedCandidates ?? [];
   const rejectedGroups = groupRejectedCandidates(rejectedCandidates);
   const hasRejectedCandidates = rejectedCandidates.length > 0;
+  const limitations = session.limitations ?? [];
+  // Only a complete review may be presented as finished. A partial, degraded or
+  // unreported one looks identical in a findings count, which is why it is read
+  // from the state the engine recorded.
+  const reviewComplete = isReviewComplete(session.reviewState);
+  const cleanReview = safeVerdict && reviewComplete;
   const approvalQueue = buildApprovalQueue(orderedValidatedFindings);
   const approvalQueuedFindingIds = new Set(approvalQueue.map((item) => item.findingId));
   const surfacedValidatedFindings = orderedValidatedFindings.filter((finding) => !approvalQueuedFindingIds.has(finding.id));
@@ -82,8 +94,10 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
             </p>
           </div>
           <div className="flex items-center gap-2 text-txt-secondary">
-            <CheckCircle2 size={15} className={safeVerdict ? "text-status-success" : "text-txt-secondary"} />
-            <span className="text-sm font-medium text-txt-primary">{safeVerdict ? "Reviewed" : "Completed"}</span>
+            <CheckCircle2 size={15} className={cleanReview ? "text-status-success" : "text-txt-secondary"} />
+            <span className="text-sm font-medium text-txt-primary">
+              {cleanReview ? "Reviewed" : reviewComplete ? "Completed" : getReviewStateLabel(session.reviewState)}
+            </span>
           </div>
         </motion.div>
 
@@ -91,16 +105,31 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
           initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.12 }}
-          className={`rounded-xl border px-5 py-4 ${safeVerdict ? "bg-[#f7fbf7]" : "bg-card"}`}
-          style={{ borderColor: safeVerdict ? "rgba(94, 155, 110, 0.22)" : "hsl(var(--border-soft))" }}
+          className={`rounded-xl border px-5 py-4 ${cleanReview ? "bg-[#f7fbf7]" : "bg-card"}`}
+          style={{ borderColor: cleanReview ? "rgba(94, 155, 110, 0.22)" : "hsl(var(--border-soft))" }}
         >
-          <p className={`text-sm font-medium ${safeVerdict ? "text-status-success" : "text-txt-primary"}`}>
-            {safeVerdict ? "No validated security issue was confirmed in the selected scope" : "Validated repository assessment"}
+          <p className={`text-sm font-medium ${cleanReview ? "text-status-success" : "text-txt-primary"}`}>
+            {cleanReview
+              ? "No validated security issue was confirmed in the selected scope"
+              : reviewComplete
+                ? "Validated repository assessment"
+                : "Review completed with limitations"}
           </p>
           <p className="mt-2 text-sm leading-6 text-txt-secondary">
-            {toAnalystCopy(session.session.repositorySummary) || (safeVerdict ? "The selected source was reviewed and no high-confidence issue was confirmed" : "CodeRadar completed the repository assessment")}
+            {reviewComplete
+              ? toAnalystCopy(session.session.repositorySummary) ||
+                (cleanReview
+                  ? "The selected source was reviewed and no high-confidence issue was confirmed"
+                  : "CodeRadar completed the repository assessment")
+              : describeReviewCompleteness(session.reviewState, limitations)}
           </p>
-          {!hasFindings && hasCoverageGap && (
+          {!reviewComplete && (
+            <p className="mt-3 text-xs leading-5 text-txt-tertiary">
+              A limitation is not a finding and not a defect: nothing was claimed about the code. The full list is in Review
+              limitations below.
+            </p>
+          )}
+          {reviewComplete && !hasFindings && hasCoverageGap && (
             <p className="mt-2 text-sm leading-6 text-txt-secondary">
               The score is below 100 because the reviewed coverage was partial. No confirmed finding was retained, but the selected scope was not fully covered.
               {hasCandidateFindings ? " Candidate findings are shown below for manual review" : ""}
@@ -428,15 +457,17 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
           subtitle={approvalQueue.length > 0 ? "Open findings only" : undefined}
           findings={surfacedValidatedFindings}
           emptyMessage={
-            safeVerdict
-              ? hasCoverageGap
-                ? "No confirmed finding was retained, but the reviewed coverage was partial — the score stays below 100 until the selected scope is fully covered"
-                : hasSecurityScore
-                  ? `The review finished with a score of ${session.session.securityScore}/100 — no high-confidence, confirmed security issue was found in the reviewed scope`
-                  : "No high-confidence, confirmed security issue was found in the reviewed scope"
-              : approvalQueue.length > 0
-                ? "All validated findings in this session are already tracked in the review queue below"
-                : "No confirmed findings were returned for this review"
+            !reviewComplete
+              ? "No confirmed finding was retained, and the review did not cover everything it was asked to — this is not a clean result. See the review limitations above."
+              : safeVerdict
+                ? hasCoverageGap
+                  ? "No confirmed finding was retained, but the reviewed coverage was partial — the score stays below 100 until the selected scope is fully covered"
+                  : hasSecurityScore
+                    ? `The review finished with a score of ${session.session.securityScore}/100 — no high-confidence, confirmed security issue was found in the reviewed scope`
+                    : "No high-confidence, confirmed security issue was found in the reviewed scope"
+                : approvalQueue.length > 0
+                  ? "All validated findings in this session are already tracked in the review queue below"
+                  : "No confirmed findings were returned for this review"
           }
           onSelectFinding={onSelectFinding}
         />
@@ -447,6 +478,10 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
             groups={groupCandidateFindings(filteredCandidateFindings)}
             onSelectFinding={onSelectFinding}
           />
+        )}
+
+        {!reviewComplete && limitations.length > 0 && (
+          <ReviewLimitationsCard state={session.reviewState} limitations={limitations} />
         )}
 
         {hasRejectedCandidates && (
@@ -982,6 +1017,46 @@ function groupCandidateFindings(findings: Finding[]): CandidateGroup[] {
     });
   }
   return Array.from(groups.values());
+}
+
+/**
+ * Why the review is not a complete answer.
+ *
+ * Kept apart from findings and from dropped candidates on purpose: a limitation
+ * is a statement about the review, not about the code. Merging it into either
+ * would present coverage as a defect.
+ */
+function ReviewLimitationsCard({
+  state,
+  limitations,
+}: {
+  state: ScanSessionDetail["reviewState"];
+  limitations: ReviewLimitationSummary[];
+}) {
+  return (
+    <div className="rounded-xl border bg-card px-5 py-4" style={{ borderColor: "hsl(var(--border-soft))" }}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-txt-primary">{getReviewStateLabel(state)}</h3>
+        <span className="text-xs font-medium uppercase tracking-[0.16em] text-txt-tertiary">
+          {limitations.length} limitation{limitations.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <p className="mt-2 text-sm leading-6 text-txt-secondary">
+        Each one below is something the review did not do. The panel above states what that means for the result.
+      </p>
+      <ul className="mt-3 space-y-2">
+        {limitations.map((limitation) => (
+          <li key={limitation.code} className="rounded-lg bg-[#f4f4f5] px-3 py-2">
+            <p className="text-xs font-medium text-txt-primary">{getLimitationLabel(limitation.code)}</p>
+            <p className="mt-0.5 text-xs leading-5 text-txt-secondary">{limitation.detail}</p>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-xs leading-5 text-txt-tertiary">
+        These are review limits, not proof that the code is unsafe, and not findings.
+      </p>
+    </div>
+  );
 }
 
 /**

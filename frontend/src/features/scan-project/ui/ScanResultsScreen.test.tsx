@@ -69,6 +69,9 @@ describe("ScanResultsScreen", () => {
       candidateFindings: [],
       rejectedCandidates: [],
       rejectionsByReason: {},
+      reviewState: "complete",
+      limitations: [],
+      aiReview: null,
       issues: { critical: 0, high: 2, medium: 0, low: 0 },
       errorMessage: null,
       completedAt: null,
@@ -160,6 +163,9 @@ describe("ScanResultsScreen", () => {
       candidateFindings: [],
       rejectedCandidates: [],
       rejectionsByReason: {},
+      reviewState: "complete",
+      limitations: [],
+      aiReview: null,
       issues: { critical: 0, high: 0, medium: 0, low: 0 },
       errorMessage: null,
       completedAt: null,
@@ -312,6 +318,9 @@ describe("ScanResultsScreen", () => {
       candidateFindings: [],
       rejectedCandidates,
       rejectionsByReason: { "evidence-not-in-source": 2, "merged-duplicate": 1, "over-finding-cap": 1 },
+      reviewState: "complete",
+      limitations: [],
+      aiReview: null,
       issues: { critical: 0, high: 0, medium: 0, low: 0 },
       errorMessage: null,
       completedAt: null,
@@ -411,5 +420,122 @@ describe("ScanResultsScreen", () => {
     expect(
       screen.getByText(/No quoted code was submitted, and the evidence does not name src\/session-store.ts, so there was nothing left to verify/),
     ).toBeInTheDocument();
+  });
+
+  it("never presents an incomplete review as clean", () => {
+    render(
+      <ScanResultsScreen
+        session={
+          {
+            verdict: "safe",
+            findings: [],
+            candidateFindings: [],
+            rejectedCandidates: [],
+            rejectionsByReason: {},
+            reviewState: "degraded",
+            limitations: [
+              {
+                code: "ai-response-invalid",
+                detail: "2 model responses could not be read as a review, so 2 files were checked deterministically only.",
+                count: 2,
+              },
+            ],
+            aiReview: {
+              attempted: 11,
+              valid: 0,
+              empty: 0,
+              partial: 0,
+              invalid: 2,
+              unavailable: 9,
+              entriesDropped: 0,
+              notSent: 0,
+            },
+            issues: { critical: 0, high: 0, medium: 0, low: 0 },
+            session: {
+              id: "session-1",
+              title: "repo",
+              repo: "repo",
+              time: "2m",
+              status: "completed",
+              scanMode: "deep",
+              securityScore: null,
+              repositorySummary: null,
+              coveragePercent: 100,
+              reviewedFilesCount: 11,
+              eligibleFilesCount: 11,
+              candidateFindingsCount: 0,
+              skippedFilesCount: 0,
+              preset: "balanced",
+              createdAt: "2026-04-15T20:00:00Z",
+              updatedAt: "2026-04-15T20:02:00Z",
+              lastVerification: null,
+              workflowSummary: null,
+              annotations: [],
+            },
+          } as unknown as ScanSessionDetail
+        }
+        onSelectFinding={vi.fn()}
+      />,
+    );
+
+    // The three claims the screen must not make for a review that could not read
+    // its own model answers.
+    expect(screen.queryByText(/no validated security issue was confirmed/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no high-confidence, confirmed security issue was found/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/not evidence of clean code/i)).toBeInTheDocument();
+
+    // The limitation is shown as a review limit, with its own heading, and is not
+    // dressed up as a finding. The state label appears in the header and on the
+    // card, so it is asserted as present rather than unique.
+    expect(screen.getAllByText(/Review incomplete/i).length).toBeGreaterThan(0);
+    expect(screen.getByText("A model answer could not be read")).toBeInTheDocument();
+    expect(screen.getByText(/not proof that the code is unsafe, and not findings/i)).toBeInTheDocument();
+    expect(screen.getByText(/No confirmed finding was retained, and the review did not cover everything/i)).toBeInTheDocument();
+  });
+
+  it("keeps a complete review's clean wording", () => {
+    render(
+      <ScanResultsScreen
+        session={
+          {
+            verdict: "safe",
+            findings: [],
+            candidateFindings: [],
+            rejectedCandidates: [],
+            rejectionsByReason: {},
+            reviewState: "complete",
+            limitations: [],
+            aiReview: { attempted: 3, valid: 0, empty: 3, partial: 0, invalid: 0, unavailable: 0, entriesDropped: 0, notSent: 0 },
+            issues: { critical: 0, high: 0, medium: 0, low: 0 },
+            session: {
+              id: "session-2",
+              title: "repo",
+              repo: "repo",
+              time: "1m",
+              status: "completed",
+              scanMode: "deep",
+              securityScore: null,
+              repositorySummary: "Reviewed 3 files",
+              coveragePercent: 100,
+              reviewedFilesCount: 3,
+              eligibleFilesCount: 3,
+              candidateFindingsCount: 0,
+              skippedFilesCount: 0,
+              preset: "balanced",
+              createdAt: "2026-04-15T20:00:00Z",
+              updatedAt: "2026-04-15T20:01:00Z",
+              lastVerification: null,
+              workflowSummary: null,
+              annotations: [],
+            },
+          } as unknown as ScanSessionDetail
+        }
+        onSelectFinding={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/no validated security issue was confirmed/i)).toBeInTheDocument();
+    // No limitation card exists for a complete review.
+    expect(screen.queryByText(/not proof that the code is unsafe, and not findings/i)).not.toBeInTheDocument();
   });
 });

@@ -91,7 +91,6 @@ interface SessionRecord {
   completedAt: string | null;
   elapsedSeconds: number;
   report: ReviewReport | null;
-  aiSkipped: boolean;
   errorMessage: string | null;
   subscribers: Set<(detail: WireScanDetail) => void>;
 }
@@ -255,7 +254,6 @@ export async function startReviewApiServer(options: ReviewApiServerOptions): Pro
         targetType: record.targetType,
         preset: record.preset,
         scanMode: record.scanMode,
-        aiSkipped: record.aiSkipped,
         createdAt: record.createdAt,
         completedAt: record.completedAt,
         elapsedSeconds: record.elapsedSeconds,
@@ -326,8 +324,9 @@ export async function startReviewApiServer(options: ReviewApiServerOptions): Pro
         },
         onEvent,
       );
+      // The report carries its own state and limitations, so nothing about how
+      // complete the review is has to be recomputed here.
       record.report = result.report;
-      record.aiSkipped = result.aiSkipped;
       record.status = "completed";
     } catch (error) {
       record.status = "failed";
@@ -432,7 +431,6 @@ export async function startReviewApiServer(options: ReviewApiServerOptions): Pro
       completedAt: null,
       elapsedSeconds: 0,
       report: null,
-      aiSkipped: false,
       errorMessage: null,
       subscribers: new Set(),
     };

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createNodeFileSystem } from "../src/adapters/node-fs.ts";
 import { createNodeGit, isSafeRef } from "../src/adapters/node-git.ts";
 import { AiReviewerError, createHttpAiReviewer, redactSecrets } from "../src/core/review/ai-reviewer.ts";
+import type { HttpAiReviewerOptions } from "../src/core/review/ai-reviewer.ts";
 import { discoverRepository, isIgnoredPath, isReviewableContent } from "../src/core/repository/discover.ts";
 import { detectTooling } from "../src/core/repository/tooling.ts";
 import { detectProjectProfile, looksGenerated } from "../src/core/languages/detect.ts";
@@ -348,5 +349,213 @@ describe("provider security", () => {
   it("redacts only long values, so short words are not mangled", () => {
     expect(redactSecrets("key=abcdef123456 done", ["abcdef123456"])).toBe("key=[redacted] done");
     expect(redactSecrets("a is a", ["a"])).toBe("a is a");
+  });
+});
+
+describe("provider call telemetry", () => {
+  const ENDPOINT = "https://api.example.com/v1/chat/completions";
+  const KEY = "sk-super-secret-value";
+  const REQUEST = { systemPrompt: "SYSTEM-PROMPT-MARKER", userPrompt: "USER-PROMPT-MARKER", maxFindings: 3 };
+
+  /** An OpenAI-compatible envelope, with every field the telemetry reads. */
+  const ENVELOPE = {
+    id: "chatcmpl-123",
+    model: "served-model-9",
+    choices: [{ message: { content: '{"verdict":"approve","findings":[]}' }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 120, completion_tokens: 8, total_tokens: 128 },
+  };
+
+  const original = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = original;
+  });
+
+  function stubFetch(handler: () => Response): void {
+    globalThis.fetch = (async () => handler()) as unknown as typeof fetch;
+  }
+
+  function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json", ...headers },
+    });
+  }
+
+  function reviewerWith(overrides: Partial<HttpAiReviewerOptions> = {}) {
+    return createHttpAiReviewer({ endpoint: ENDPOINT, apiKey: KEY, model: "configured-model", ...overrides });
+  }
+
+  it("records what a successful call was, and nothing it was shown", async () => {
+    stubFetch(() => jsonResponse(ENVELOPE, 200, { "x-request-id": "req-42" }));
+
+    const execution = await reviewerWith().reviewWithTelemetry(REQUEST);
+
+    expect(execution.status).toBe("response");
+    if (execution.status !== "response") throw new Error("expected a response");
+
+    const telemetry = execution.telemetry;
+    expect(telemetry.provider).toBe("api.example.com");
+    // What was asked for. What answered is a separate fact, kept per attempt.
+    expect(telemetry.model).toBe("configured-model");
+    expect(telemetry.attempts).toHaveLength(1);
+
+    const attempt = telemetry.attempts[0];
+    expect(attempt?.attempt).toBe(1);
+    expect(attempt?.outcome).toBe("response");
+    expect(attempt?.status).toBe(200);
+    expect(attempt?.contentType).toContain("application/json");
+    expect(attempt?.requestId).toBe("req-42");
+    expect(attempt?.responseBytes).toBeGreaterThan(0);
+    expect(attempt?.responseId).toBe("chatcmpl-123");
+    expect(attempt?.responseModel).toBe("served-model-9");
+    expect(attempt?.finishReason).toBe("stop");
+    expect(attempt?.usage).toEqual({ promptTokens: 120, completionTokens: 8, totalTokens: 128 });
+    expect(attempt?.latencyMs).toBeGreaterThanOrEqual(0);
+
+    // The record has to be safe to keep next to a report: no key, no prompt, and
+    // no response text. Counts and identifiers only.
+    const serialised = JSON.stringify(telemetry);
+    expect(serialised).not.toContain(KEY);
+    expect(serialised).not.toContain("SYSTEM-PROMPT-MARKER");
+    expect(serialised).not.toContain("USER-PROMPT-MARKER");
+    expect(serialised).not.toContain("approve");
+    expect(serialised).not.toContain("message");
+  });
+
+  it("keeps every attempt of a retried call, including the ones that failed", async () => {
+    let call = 0;
+    stubFetch(() => {
+      call += 1;
+      return call === 1 ? jsonResponse({ error: { message: "rate limited" } }, 429, { "retry-after": "0" }) : jsonResponse(ENVELOPE);
+    });
+
+    const retries: Array<{ attempt: number; status: number | null; delayMs: number }> = [];
+    const reviewer = reviewerWith({
+      maxAttempts: 3,
+      retryDelayMs: 0,
+      onRetry: (info) => retries.push(info),
+    });
+
+    const execution = await reviewer.reviewWithTelemetry(REQUEST);
+
+    expect(execution.status).toBe("response");
+    expect(retries).toEqual([{ attempt: 1, status: 429, delayMs: 0 }]);
+    expect(execution.telemetry.attempts.map((attempt) => attempt.outcome)).toEqual(["http-error", "response"]);
+    expect(execution.telemetry.attempts[0]?.status).toBe(429);
+    // A failed attempt still has a size: "empty body" and "long error" differ.
+    expect(execution.telemetry.attempts[0]?.responseBytes).toBeGreaterThan(0);
+    expect(execution.telemetry.attempts[1]?.responseId).toBe("chatcmpl-123");
+  });
+
+  it("keeps the telemetry of a call that never produced a response", async () => {
+    stubFetch(() =>
+      new Response('{"error":{"message":"gateway is down"},"echo":"source-marker"}', {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const execution = await reviewerWith({ maxAttempts: 2, retryDelayMs: 0 }).reviewWithTelemetry(REQUEST);
+
+    expect(execution.status).toBe("failure");
+    if (execution.status !== "failure") throw new Error("expected a failure");
+
+    expect(execution.telemetry.attempts.map((attempt) => [attempt.outcome, attempt.status])).toEqual([
+      ["http-error", 503],
+      ["http-error", 503],
+    ]);
+    // The diagnostic path carries no provider prose at all, so a body that echoes
+    // the source cannot travel with the report.
+    expect(execution.error.name).toBe("AttemptFailure");
+    const failure = JSON.stringify(execution.error);
+    expect(failure).not.toContain("gateway is down");
+    expect(failure).not.toContain("source-marker");
+
+    // The ordinary path is unchanged: a caller that did not ask for telemetry
+    // still gets the provider's status and its redacted body in the message.
+    await expect(reviewerWith({ maxAttempts: 2, retryDelayMs: 0 }).review(REQUEST)).rejects.toThrow(
+      "provider returned 503",
+    );
+  });
+
+  it("separates an unreadable body from a failed call", async () => {
+    stubFetch(() => new Response("not json at all", { status: 200, headers: { "content-type": "text/plain" } }));
+
+    const execution = await reviewerWith({ maxAttempts: 1 }).reviewWithTelemetry(REQUEST);
+
+    expect(execution.status).toBe("failure");
+    if (execution.status !== "failure") throw new Error("expected a failure");
+
+    // A 200 with an unreadable body is not an HTTP failure: the provider answered.
+    expect(execution.telemetry.attempts[0]?.outcome).toBe("invalid-json");
+    expect(execution.telemetry.attempts[0]?.status).toBe(200);
+    expect(execution.telemetry.attempts[0]?.responseBytes).toBe("not json at all".length);
+    expect(execution.error.name).toBe("AiReviewerError");
+  });
+
+  it("separates a transport failure from an HTTP failure", async () => {
+    globalThis.fetch = (async () => {
+      throw new TypeError("network down");
+    }) as unknown as typeof fetch;
+
+    const execution = await reviewerWith({ maxAttempts: 1 }).reviewWithTelemetry(REQUEST);
+
+    expect(execution.status).toBe("failure");
+    if (execution.status !== "failure") throw new Error("expected a failure");
+
+    expect(execution.telemetry.attempts[0]?.outcome).toBe("transport-error");
+    expect(execution.telemetry.attempts[0]?.status).toBeNull();
+    expect(execution.telemetry.attempts[0]?.responseBytes).toBeNull();
+    expect(execution.error.name).toBe("AttemptFailure");
+  });
+
+  it("reports a cancellation without inventing an attempt that never happened", async () => {
+    let calls = 0;
+    stubFetch(() => {
+      calls += 1;
+      return jsonResponse(ENVELOPE);
+    });
+
+    const execution = await reviewerWith({ signal: AbortSignal.abort() }).reviewWithTelemetry(REQUEST);
+
+    expect(execution.status).toBe("failure");
+    if (execution.status !== "failure") throw new Error("expected a failure");
+    expect(calls).toBe(0);
+    // Nothing was sent, so there is nothing to record: an empty attempt list and a
+    // cancelled attempt are different facts about the same run.
+    expect(execution.telemetry.attempts).toEqual([]);
+    expect(execution.error.name).toBe("AiReviewerError");
+  });
+
+  it("stops retrying when the run is cancelled during the wait", async () => {
+    const controller = new AbortController();
+    stubFetch(() => jsonResponse({ error: { message: "rate limited" } }, 429, { "retry-after": "30" }));
+
+    const execution = await reviewerWith({
+      maxAttempts: 3,
+      signal: controller.signal,
+      onRetry: () => controller.abort(),
+    }).reviewWithTelemetry(REQUEST);
+
+    expect(execution.status).toBe("failure");
+    if (execution.status !== "failure") throw new Error("expected a failure");
+    // One attempt was made, and the record says so; the second never started.
+    expect(execution.telemetry.attempts.map((attempt) => attempt.outcome)).toEqual(["http-error"]);
+    expect(execution.error.name).toBe("AiReviewerError");
+  });
+
+  it("reports envelope metadata that is absent or the wrong type as absent", async () => {
+    stubFetch(() => jsonResponse({ id: 42, model: null, choices: [{ message: { content: "{}" } }], usage: "tokens" }));
+
+    const execution = await reviewerWith().reviewWithTelemetry(REQUEST);
+
+    expect(execution.status).toBe("response");
+    if (execution.status !== "response") throw new Error("expected a response");
+    const attempt = execution.telemetry.attempts[0];
+    expect(attempt?.responseId).toBeNull();
+    expect(attempt?.responseModel).toBeNull();
+    expect(attempt?.finishReason).toBeNull();
+    expect(attempt?.usage).toBeNull();
+    expect(attempt?.outcome).toBe("response");
   });
 });

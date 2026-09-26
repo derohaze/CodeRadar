@@ -10,17 +10,28 @@ scored against this list; it was written before any review was run.
 
 ## Planted defects
 
-| id | file | defect | expected severity |
-| -- | ---- | ------ | ----------------- |
-| D1 | `src/orders-api.ts` | `GET /orders/:id` returns any order by id without comparing `order.device` to `request.session.deviceId` — missing authorization. The `DELETE` route on the same path does perform that check. | critical / high |
-| D2 | `src/user-profile.ts` | `user.address.city` dereferences `address`, which the schema declares nullable. | high |
-| D3 | `src/user-profile.ts` | `user.plan_code.replace(...)` dereferences `plan_code`, which the schema declares nullable. | high / medium |
-| D4 | `src/session-store.ts` | `sessions.forEach(async ...)` never awaits the revocations, so `revokeAllForDevice` returns `0` and rejections become unhandled. | high |
-| D5 | `src/report-query.ts` | `searchByDevice` concatenates `term` into SQL — SQL injection. | high / critical |
-| D6 | `src/upload-handler.ts` | the `catch` responds `201` with a fabricated id, reporting a failed upload as a success; the order is never marked reconciled. | high |
-| D7 | `src/cart.ts` | `applyQuantityCap` mutates the caller's array in place, which the module doc says callers rely on not happening. | medium / low |
-| D8 | `src/retry-policy.ts` | `withRetry` returns `undefined as unknown as T` on the final failed attempt (line 25), while the module doc states the contract is that it returns the value or throws the last failure. Every caller is written against that contract, so a failure arrives as a silent `undefined` instead of an error. | high |
-| D9 | `src/refunds.ts` | `refundOrder` guards with `amountCents <= order.totalCents` (line 32) instead of against the amount still refundable, which the module doc defines as the captured total minus everything already refunded. The amount already refunded is read on line 30 and then never used in the guard, so an order can be refunded past its captured total across instalments. | critical / high |
+The `anchor` column is the line range that shows the defect, 1-based and inclusive.
+A finding is credited to a defect only when it names the defect's file **and** its
+reported range overlaps this anchor. Naming the right file at the wrong line is not
+a detection: crediting it would let a review score itself by knowing which files
+are interesting rather than by finding anything in them.
+
+The ranges are deliberately generous — they cover the statements that demonstrate
+the defect, not only the single wrong token — so a reviewer that anchors to the
+guard instead of the call does not lose credit for it. They were chosen by reading
+the code, before any run was scored.
+
+| id | file | anchor | defect | expected severity |
+| -- | ---- | ------ | ------ | ----------------- |
+| D1 | `src/orders-api.ts` | 12-25 | `GET /orders/:id` returns any order by id without comparing `order.device` to `request.session.deviceId` — missing authorization. The `DELETE` route on the same path does perform that check. | critical / high |
+| D2 | `src/user-profile.ts` | 27-28 | `user.address.city` dereferences `address`, which the schema declares nullable. | high |
+| D3 | `src/user-profile.ts` | 29 | `user.plan_code.replace(...)` dereferences `plan_code`, which the schema declares nullable. | high / medium |
+| D4 | `src/session-store.ts` | 27-30 | `sessions.forEach(async ...)` never awaits the revocations, so `revokeAllForDevice` returns `0` and rejections become unhandled. | high |
+| D5 | `src/report-query.ts` | 30-34 | `searchByDevice` concatenates `term` into SQL — SQL injection. | high / critical |
+| D6 | `src/upload-handler.ts` | 28-30 | the `catch` responds `201` with a fabricated id, reporting a failed upload as a success; the order is never marked reconciled. | high |
+| D7 | `src/cart.ts` | 15-17 | `applyQuantityCap` mutates the caller's array in place, which the module doc says callers rely on not happening. | medium / low |
+| D8 | `src/retry-policy.ts` | 24-26 | `withRetry` returns `undefined as unknown as T` on the final failed attempt (line 25), while the module doc states the contract is that it returns the value or throws the last failure. Every caller is written against that contract, so a failure arrives as a silent `undefined` instead of an error. | high |
+| D9 | `src/refunds.ts` | 30-32 | `refundOrder` guards with `amountCents <= order.totalCents` (line 32) instead of against the amount still refundable, which the module doc defines as the captured total minus everything already refunded. The amount already refunded is read on line 30 and then never used in the guard, so an order can be refunded past its captured total across instalments. | critical / high |
 
 ### How D8 and D9 were established
 
@@ -41,6 +52,11 @@ finding is scored on whether it identifies the right file and the right defect a
 the right lines. Severity is recorded for information only.
 
 ## Correct code written to look suspicious (must not be reported)
+
+These rows carry no anchor on purpose: the whole file is under suspicion, so a
+finding on it is a false positive at any line. The only exception is a file that
+also holds a planted defect — a finding there is scored against the defect first,
+so naming the defect correctly is never counted as a leak.
 
 | id | file | why it looks suspicious | why it is correct |
 | -- | ---- | ----------------------- | ----------------- |

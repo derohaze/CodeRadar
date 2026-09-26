@@ -21,7 +21,14 @@
  * number.
  */
 
-import type { RejectedCandidate, ReviewFinding, ReviewReport } from "../core/findings/model.ts";
+import type {
+  AiReviewSummary,
+  RejectedCandidate,
+  ReviewFinding,
+  ReviewLimitation,
+  ReviewReport,
+  ReviewState,
+} from "../core/findings/model.ts";
 import { detectProjectProfile } from "../core/languages/detect.ts";
 
 export type WireSeverity = "critical" | "high" | "medium" | "low";
@@ -104,6 +111,30 @@ export interface WireRejectionDiagnostics {
   confidence: number | null;
 }
 
+/**
+ * A reason the review is not a complete answer.
+ *
+ * It is not a finding and must never be rendered as one: there is no severity, no
+ * file, and no fix, because nothing has been claimed about the code.
+ */
+export interface WireReviewLimitation {
+  code: string;
+  detail: string;
+  count: number | null;
+}
+
+/** What the model stage did, so the app can show coverage rather than guess at it. */
+export interface WireAiReview {
+  attempted: number;
+  valid: number;
+  empty: number;
+  partial: number;
+  invalid: number;
+  unavailable: number;
+  entries_dropped: number;
+  not_sent: number;
+}
+
 export interface WireAnalysisBrief {
   score_explanation: string;
   potential_risks: string[];
@@ -122,6 +153,14 @@ export interface WireSession {
   status: WireSessionStatus;
   preview: string;
   scan_mode: WireScanMode;
+  /**
+   * `complete` / `partial` / `degraded` / `failed`, or null while a review runs.
+   *
+   * It is null rather than a placeholder because a run in progress has no state
+   * yet, and showing `complete` for one would be the same lie as showing it for a
+   * broken review.
+   */
+  review_state: ReviewState | null;
   critical_count: number;
   warning_count: number;
   findings_count: number;
@@ -190,6 +229,12 @@ export interface WireScanDetail {
   rejected_candidates: WireRejectedCandidate[];
   /** The engine's own rejection tally, by reason. */
   rejections_by_reason: Record<string, number>;
+  /** How complete the review is. `failed` when there is no report at all. */
+  review_state: ReviewState;
+  /** Why it is not complete. Not findings, and never rendered as any. */
+  review_limitations: WireReviewLimitation[];
+  /** What the model stage did. Null when it did not run at all. */
+  ai_review: WireAiReview | null;
   verdict: "safe" | "issues_found";
   completed_at: string | null;
   error_message: string | null;
@@ -267,34 +312,21 @@ function rejectionLabel(candidate: RejectedCandidate): string {
   return `${candidate.file}:${candidate.line} — ${candidate.title} (${candidate.reason.replace(/-/g, " ")}: ${candidate.detail})`;
 }
 
-function buildAnalysisBrief(report: ReviewReport, aiSkipped: boolean): WireAnalysisBrief {
-  const limitations: string[] = [];
+/**
+ * The brief, derived from the report's own limitations.
+ *
+ * The report is the single source: it recorded each limitation where the fact was
+ * known, so this maps them to prose instead of re-deriving them from counts. Two
+ * places deciding why a review is incomplete is how they drift apart, and the
+ * drift is invisible — both render as a plausible sentence.
+ */
+function buildAnalysisBrief(report: ReviewReport): WireAnalysisBrief {
   const nextSteps: string[] = [];
-  const index = report.repositoryIndex;
+  const codes = new Set(report.limitations.map((limitation) => limitation.code));
 
-  if (aiSkipped) {
-    limitations.push(
-      "The model did not review this run, so every finding comes from the deterministic checks. Cross-file and intent-level defects are not covered.",
-    );
+  if (codes.has("ai-unavailable")) {
     nextSteps.push("Add an API key in Settings to include the model in the next review.");
   }
-  if (report.stats.filesReviewed < report.stats.filesDiscovered) {
-    limitations.push(
-      `${report.stats.filesReviewed} of ${report.stats.filesDiscovered} discovered files were reviewed; the rest were outside the selected scope or beyond the review budget.`,
-    );
-  }
-  if (index.contentUnavailable) {
-    limitations.push("File contents were unavailable, so route, auth, and sink markers could not be counted.");
-  }
-  if (index.truncatedFiles > 0) {
-    limitations.push(`${plural(index.truncatedFiles, "file")} too large to index in full.`);
-  }
-  if (report.scope.diffAware) {
-    limitations.push(
-      `Findings are anchored to lines changed against ${report.scope.baseBranch ?? "the base branch"}; the other files in scope were still reviewed in full.`,
-    );
-  }
-
   if (report.findings.length > 0) {
     nextSteps.push(`Apply the recommended fix for ${plural(report.findings.length, "finding")} and re-run the review.`);
   }
@@ -308,9 +340,41 @@ function buildAnalysisBrief(report: ReviewReport, aiSkipped: boolean): WireAnaly
     // is exactly what the "potential risks" card says it lists.
     potential_risks: report.rejected.slice(0, 10).map(rejectionLabel),
     security_observations: [],
-    analysis_limitations: limitations,
+    analysis_limitations: report.limitations.map((limitation) => limitation.detail),
     attack_thinking: [],
     next_steps: nextSteps,
+  };
+}
+
+/**
+ * The review's own state and limitations, as the renderer reads them.
+ *
+ * A failed session has no report at all, which is the one case the state cannot
+ * come from the report.
+ */
+function wireReviewState(report: ReviewReport | null): ReviewState {
+  return report === null ? "failed" : report.state;
+}
+
+function toWireLimitation(limitation: ReviewLimitation): WireReviewLimitation {
+  return {
+    code: limitation.code,
+    detail: limitation.detail,
+    count: limitation.count ?? null,
+  };
+}
+
+function toWireAiReview(summary: AiReviewSummary | null): WireAiReview | null {
+  if (summary === null) return null;
+  return {
+    attempted: summary.attempted,
+    valid: summary.valid,
+    empty: summary.empty,
+    partial: summary.partial,
+    invalid: summary.invalid,
+    unavailable: summary.unavailable,
+    entries_dropped: summary.entriesDropped,
+    not_sent: summary.notSent,
   };
 }
 
@@ -338,7 +402,6 @@ export interface BuildSessionInput {
   targetType: "file" | "folder";
   preset: WirePreset;
   scanMode: WireScanMode;
-  aiSkipped: boolean;
   createdAt: string;
   completedAt: string | null;
   elapsedSeconds: number;
@@ -372,6 +435,7 @@ export function buildWireSession(input: BuildSessionInput, report: ReviewReport 
     status: input.status,
     preview: firstFinding?.title ?? report?.summary.slice(0, 120) ?? "",
     scan_mode: input.scanMode,
+    review_state: report === null ? null : report.state,
     critical_count: counts.critical,
     warning_count: counts.high,
     findings_count: findings.length,
@@ -386,7 +450,7 @@ export function buildWireSession(input: BuildSessionInput, report: ReviewReport 
     runtime_metrics: { elapsed_seconds: input.elapsedSeconds },
     scan_plan: null,
     repository_summary: report?.summary ?? null,
-    analysis_brief: report === null ? null : buildAnalysisBrief(report, input.aiSkipped),
+    analysis_brief: report === null ? null : buildAnalysisBrief(report),
     repository_inventory:
       index === null
         ? null
@@ -511,6 +575,9 @@ export function buildWireScanDetail(session: WireSession, report: ReviewReport |
     candidate_findings: [],
     rejected_candidates: rejected.map(toWireRejectedCandidate),
     rejections_by_reason: report?.stats.rejectionsByReason ?? {},
+    review_state: wireReviewState(report),
+    review_limitations: (report?.limitations ?? []).map(toWireLimitation),
+    ai_review: toWireAiReview(report?.stats.aiReview ?? null),
     verdict: findings.length === 0 ? "safe" : "issues_found",
     completed_at: session.status === "completed" || session.status === "failed" ? session.updated_at : null,
     error_message: errorMessage,

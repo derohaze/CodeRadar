@@ -61,6 +61,8 @@ const refusedReviews = [];
 let startedReviews = 0;
 /** The last ground-truth evaluation, kept for the JSON report. */
 let evaluation = null;
+/** The last review state the app reported, kept for the JSON report. */
+let reviewState = null;
 
 /** The window under test, shared by the step helpers. */
 let page;
@@ -103,6 +105,7 @@ async function main() {
       checks,
       notes,
       evaluation,
+      reviewState,
     };
     writeFileSync(REPORT_PATH, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
     process.stdout.write(`${"-".repeat(72)}\nreport: ${REPORT_PATH}\n`);
@@ -614,6 +617,30 @@ async function runChecks(page) {
             .join(", ")}`,
     );
 
+    // ---- 10b. The review's own completeness, and the claim it forbids ------
+    // A review reports nothing when it is clean and when a stage did not run, and
+    // the two need opposite responses. The state is a field the engine recorded,
+    // so this checks it arrived rather than inferring it from a findings count.
+    reviewState = truthDetail.review_state ?? null;
+    record(
+      "The app receives the review's own completeness state",
+      typeof reviewState === "string" && reviewState !== "" ? "PASS" : "FAIL",
+      `${reviewState} with ${(truthDetail.review_limitations ?? []).length} limitation(s): ${(truthDetail.review_limitations ?? [])
+        .map((entry) => entry.code)
+        .join(", ") || "none"}`,
+    );
+
+    // The screen must not tell the user the code is clean when the review could
+    // not read its own model answers. The digest is what the renderer rendered.
+    const renderedCleanClaim = /no validated security issue was confirmed/i.test(truthResults);
+    record(
+      "A degraded review is not rendered as clean",
+      reviewState === "complete" || !renderedCleanClaim ? "PASS" : "FAIL",
+      reviewState === "complete"
+        ? "the review was complete, so a clean claim is allowed"
+        : `state ${reviewState}; the clean-claim wording was rendered: ${renderedCleanClaim}`,
+    );
+
     evaluation = scoreLiveRun(truthDetail);
     if (evaluation === null) {
       record("Dropped candidates scored against ground truth", "NOT RUN", "the engine scorer did not run");
@@ -665,7 +692,7 @@ async function runChecks(page) {
     note(`ground truth missed: ${missed.map((entry) => `${entry.id} (${entry.file})`).join(", ") || "none"}`);
   }
 
-  // ---- 11. Every review this session started ------------------------------
+  // ---- 12. Every review this session started ------------------------------
   record(
     "No review was refused while another was claimed",
     refusedReviews.length === 0 ? "PASS" : "FAIL",

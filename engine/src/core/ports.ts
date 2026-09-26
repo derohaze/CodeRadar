@@ -65,9 +65,61 @@ export interface AiReviewRequest {
   maxFindings: number;
 }
 
+export interface AiReviewAttemptTelemetry {
+  /** 1-based provider attempt, including failures that are retried. */
+  attempt: number;
+  latencyMs: number;
+  outcome: "response" | "http-error" | "transport-error" | "invalid-json" | "cancelled";
+  status: number | null;
+  contentType: string | null;
+  requestId: string | null;
+  responseBytes: number | null;
+  responseId: string | null;
+  responseModel: string | null;
+  finishReason: string | null;
+  usage: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null } | null;
+}
+
+/** Safe metadata about a model call; contains no prompts, response text, or credentials. */
+export interface AiReviewTelemetry {
+  provider: string | null;
+  model: string | null;
+  attempts: AiReviewAttemptTelemetry[];
+}
+
+export type AiReviewExecution =
+  | { status: "response"; response: unknown; telemetry: AiReviewTelemetry }
+  | { status: "failure"; error: { name: string; message: string }; telemetry: AiReviewTelemetry };
+
 export interface AiReviewerPort {
   readonly name: string;
   review(request: AiReviewRequest): Promise<unknown>;
+  /** Optional diagnostic path; wrappers preserve it so replay records the same calls. */
+  reviewWithTelemetry?(request: AiReviewRequest): Promise<AiReviewExecution>;
+}
+
+/** Makes an execution failure observable through the legacy `review()` contract. */
+export function aiReviewExecutionError(execution: AiReviewExecution): Error {
+  if (execution.status === "response") return new Error("cannot create an error from a successful model response");
+  const error = new Error(execution.error.message);
+  error.name = execution.error.name;
+  return error;
+}
+
+/** Safe fallback for reviewers that have not implemented call telemetry. */
+export function emptyAiReviewTelemetry(provider: string | null, model: string | null): AiReviewTelemetry {
+  return { provider, model, attempts: [] };
+}
+
+/** Best-effort conversion of an ordinary reviewer exception without logging its message. */
+export function aiReviewFailure(error: unknown, telemetry: AiReviewTelemetry): AiReviewExecution {
+  return {
+    status: "failure",
+    // Messages can echo source or credentials. Preserve only the exception class;
+    // diagnostic reports need the boundary and attempt metadata, not provider prose.
+    error: { name: error instanceof Error ? error.name : "Error", message: "model request failed" },
+    telemetry,
+  };
 }
 
 /** Progress reporting for the UI. Never carries source content. */

@@ -104,9 +104,52 @@ export interface ScanSessionDetail {
   rejectedCandidates: RejectedCandidateSummary[];
   /** The engine's own tally of rejections by reason. */
   rejectionsByReason: Record<string, number>;
+  /**
+   * How complete the review is, or null when the engine did not report it.
+   *
+   * Null is not `complete`: a response that never said whether every stage ran
+   * cannot be used to claim the code is clean. Only `"complete"` may be treated
+   * as a finished, trustworthy review.
+   */
+  reviewState: ReviewState | null;
+  /** Why the review is not complete. Never rendered as a finding. */
+  limitations: ReviewLimitationSummary[];
+  /** What the model stage did, or null when it did not run at all. */
+  aiReview: AiReviewSummary | null;
   verdict: "safe" | "issues_found";
   completedAt: string | null;
   errorMessage: string | null;
+}
+
+/** The engine's canonical review states. */
+export type ReviewState = "complete" | "partial" | "degraded" | "failed";
+
+export interface ReviewLimitationSummary {
+  /** The engine's machine code, e.g. `ai-response-invalid`. */
+  code: string;
+  /** One sentence a reviewer can act on. */
+  detail: string;
+  /** How many things the sentence is about, when it has a count. */
+  count: number | null;
+}
+
+/**
+ * What the model stage did, per call.
+ *
+ * `invalid` is a response that could not be read and `unavailable` is a call that
+ * produced none. They are reported apart from `empty`, which is the model saying
+ * a file holds no defect — a real answer, and the only kind that may be read as
+ * clean code.
+ */
+export interface AiReviewSummary {
+  attempted: number;
+  valid: number;
+  empty: number;
+  partial: number;
+  invalid: number;
+  unavailable: number;
+  entriesDropped: number;
+  notSent: number;
 }
 
 export interface RejectedCandidateSummary {
@@ -404,6 +447,27 @@ function mapScanSessionDetail(data: ScanSessionDetailApiResponse): ScanSessionDe
     // is not worth failing the whole screen for.
     rejectedCandidates: (data.rejected_candidates ?? []).map(mapRejectedCandidate),
     rejectionsByReason: data.rejections_by_reason ?? {},
+    // Absent rather than guessed: an engine that did not report a state has not
+    // said the review was complete.
+    reviewState: data.review_state ?? null,
+    limitations: (data.review_limitations ?? []).map((limitation) => ({
+      code: limitation.code,
+      detail: limitation.detail,
+      count: limitation.count,
+    })),
+    aiReview:
+      data.ai_review === null || data.ai_review === undefined
+        ? null
+        : {
+            attempted: data.ai_review.attempted,
+            valid: data.ai_review.valid,
+            empty: data.ai_review.empty,
+            partial: data.ai_review.partial,
+            invalid: data.ai_review.invalid,
+            unavailable: data.ai_review.unavailable,
+            entriesDropped: data.ai_review.entries_dropped,
+            notSent: data.ai_review.not_sent,
+          },
     verdict: data.verdict,
     completedAt: data.completed_at,
     errorMessage: data.error_message,
@@ -1007,6 +1071,18 @@ interface ScanSessionDetailApiResponse {
   candidate_findings: FindingApiResponse[];
   rejected_candidates?: RejectedCandidateApiResponse[];
   rejections_by_reason?: Record<string, number>;
+  review_state?: ReviewState;
+  review_limitations?: { code: string; detail: string; count: number | null }[];
+  ai_review?: {
+    attempted: number;
+    valid: number;
+    empty: number;
+    partial: number;
+    invalid: number;
+    unavailable: number;
+    entries_dropped: number;
+    not_sent: number;
+  } | null;
   verdict: ScanSessionDetail["verdict"];
   completed_at: string | null;
   error_message: string | null;

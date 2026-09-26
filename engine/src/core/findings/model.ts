@@ -11,6 +11,8 @@
  * that cannot fill `evidence` is not a finding, and the validator drops it.
  */
 
+import type { AiReviewTelemetry } from "../ports.ts";
+
 export const REVIEW_SCHEMA = "coderadar.review.findings.v1" as const;
 export type ReviewSchema = typeof REVIEW_SCHEMA;
 
@@ -141,6 +143,157 @@ export type RejectionReason =
   /** The candidate cleared the bar but fell outside the report's cap. */
   | "over-finding-cap";
 
+/**
+ * What one model attempt yielded.
+ *
+ * `valid` and `empty` are both readable answers: `empty` is the model saying a
+ * file holds no defect, which is a real answer and is what clean code looks
+ * like. `partial` is readable but incomplete. `invalid` is a response that could
+ * not be read as a review at all, and `unavailable` is a call that never
+ * produced one. Only the last two mean the model's judgement is missing rather
+ * than negative, and they must never be presented as clean code.
+ */
+export type AiReviewOutcome = "valid" | "empty" | "partial" | "invalid" | "unavailable";
+
+/** Counts of what the model stage actually produced. Null when it did not run. */
+export interface AiReviewSummary {
+  /** Files the model was asked about. */
+  attempted: number;
+  valid: number;
+  empty: number;
+  partial: number;
+  invalid: number;
+  unavailable: number;
+  /** Entries the parser could not turn into a candidate, across all answers. */
+  entriesDropped: number;
+  /** Reviewed files the model was never asked about, because of the AI budget. */
+  notSent: number;
+}
+
+/**
+ * Why a review is not a complete answer.
+ *
+ * A limitation is not a finding: it never contributes to the verdict, is never
+ * counted as a false positive, and never appears in `findings`. It exists so a
+ * review that could not read a file — or could not read the model's answer — is
+ * distinguishable from a review that read everything and found nothing. Those
+ * two need opposite responses from the person reading the result.
+ */
+export type ReviewLimitationCode =
+  /** The model was requested but no provider was usable. */
+  | "ai-unavailable"
+  /** The model was deliberately left out of this run. */
+  | "ai-not-requested"
+  /** The provider was called and the call did not produce a response. */
+  | "ai-provider-unavailable"
+  /** A model response arrived but could not be read as a review. */
+  | "ai-response-invalid"
+  /** A model response was readable but some entries were unusable. */
+  | "ai-entries-dropped"
+  /** Reviewed files the model was never asked about. */
+  | "ai-coverage-incomplete"
+  /** Files in the selected scope were never read. */
+  | "coverage-incomplete"
+  /** No file content was available, so the index could not be computed. */
+  | "index-content-unavailable"
+  /** Files were too large to index in full. */
+  | "index-truncated-files"
+  /** The review is anchored to changed lines, which narrows what is reported. */
+  | "diff-scoped";
+
+export interface ReviewLimitation {
+  code: ReviewLimitationCode;
+  /** One sentence a reviewer can act on. */
+  detail: string;
+  /** How many things the sentence is about, when the sentence has a count. */
+  count?: number;
+}
+
+/**
+ * How complete a review is.
+ *
+ * This is a property of the review, not of the findings, and it is deliberately
+ * not derivable from a findings count: zero findings with `complete` means clean
+ * code, and zero findings with `degraded` means a stage did not run.
+ */
+export type ReviewState =
+  /** Every file in scope was read and every model answer was readable. */
+  | "complete"
+  /** Everything in scope was read, but something was narrowed or dropped. */
+  | "partial"
+  /** A stage did not run or could not be read, so the answer is not trustworthy. */
+  | "degraded"
+  /** No review result exists at all. */
+  | "failed";
+
+/**
+ * One file's journey through the pipeline, for diagnosing a run.
+ *
+ * A trace answers "why is this defect not in the report": was the file selected,
+ * was it sent to the model, what did the model answer, what was dropped and for
+ * which reason. Only counts and reasons live here — no source content, and no
+ * prompt or response text.
+ */
+export interface ReviewCandidateTrace {
+  /** File the model was asked to inspect. */
+  requestedFile: string;
+  origin: FindingOrigin;
+  /** Candidate-provided location. No model prose or evidence text is copied here. */
+  file: string;
+  line: number;
+  lineEnd: number;
+  fieldsPresent: { title: boolean; problem: boolean; why: boolean; impact: boolean; evidence: boolean; fix: boolean };
+  evidence: { quoteCount: number; quotesFound: boolean[]; anchored: boolean | null };
+  validator: "accepted" | "rejected";
+  rejectionReason?: RejectionReason | undefined;
+  finalOutcome: "retained" | "dedupe" | "policy-rejected" | "rejected";
+  findingId?: string | undefined;
+}
+
+export interface ReviewRequestTrace {
+  maxFindings: number;
+  systemPromptBytes: number;
+  userPromptBytes: number;
+  fileLines: number;
+  contextWindows: Array<{ startLine: number; endLine: number }>;
+  relatedFiles: string[];
+  changedLineCount: number;
+}
+
+export interface ReviewFileTrace {
+  file: string;
+  /** True when selection kept the file for review. */
+  selected: boolean;
+  /** True when the AI budget selected the file for model review. */
+  selectedForModel: boolean;
+  /** True when the file was sent to the model. */
+  sentToModel: boolean;
+  /** Absent when the file was never sent to the model. */
+  modelOutcome?: AiReviewOutcome | undefined;
+  provider?: string | null | undefined;
+  model?: string | null | undefined;
+  modelErrorName?: string | undefined;
+  request?: ReviewRequestTrace | undefined;
+  response?: AiReviewTelemetry | undefined;
+  parser?:
+    | {
+        shape: string;
+        issues: string[];
+        entriesDropped: number;
+        candidateCount: number;
+        /** `content` / `reasoning-content` / `none`: where the answer was read from. */
+        answerField: string;
+      }
+    | undefined;
+  candidateDetails: ReviewCandidateTrace[];
+  /** Candidates the file produced before validation, by origin. */
+  candidates: { detector: number; ai: number };
+  /** Findings from this file that survived validation, dedupe and policy. */
+  findings: number;
+  /** Candidates from this file that were dropped, by rejection reason. */
+  rejections: Record<string, number>;
+}
+
 export interface ReviewStats {
   filesDiscovered: number;
   filesReviewed: number;
@@ -150,6 +303,8 @@ export interface ReviewStats {
   findingsKept: number;
   /** Rejection counts by reason, so tuning is measurement-driven. */
   rejectionsByReason: Record<string, number>;
+  /** What the model stage produced. Null when no reviewer was configured. */
+  aiReview: AiReviewSummary | null;
 }
 
 export interface ReviewScope {
@@ -210,8 +365,14 @@ export interface ReviewReport {
   scope: ReviewScope;
   findings: ReviewFinding[];
   rejected: RejectedCandidate[];
+  /** How complete this review is. Not derivable from `findings.length`. */
+  state: ReviewState;
+  /** Why it is not complete. Never a finding, never a rejection. */
+  limitations: ReviewLimitation[];
   stats: ReviewStats;
   repositoryIndex: RepositoryIndex;
+  /** Present only when the caller asked for a trace. */
+  trace?: ReviewFileTrace[] | undefined;
 }
 
 export function severityRank(severity: ReviewSeverity): number {

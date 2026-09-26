@@ -20,15 +20,36 @@
 import { mapWithConcurrency } from "../concurrency.ts";
 import { changedLineNumbers, diffPaths, parseUnifiedDiff } from "../diff/unified.ts";
 import { toPosixPath } from "../findings/model.ts";
-import type { RejectedCandidate, ReviewFinding, ReviewReport, ReviewScope, ReviewStats } from "../findings/model.ts";
+import type {
+  AiReviewOutcome,
+  AiReviewSummary,
+  RejectedCandidate,
+  ReviewCandidateTrace,
+  ReviewFileTrace,
+  ReviewFinding,
+  ReviewReport,
+  ReviewRequestTrace,
+  ReviewScope,
+  ReviewState,
+  ReviewStats,
+} from "../findings/model.ts";
 import { compareFindings } from "../findings/policy.ts";
 import { dedupeFindings } from "../findings/dedupe.ts";
-import { validateCandidate } from "../findings/validate.ts";
-import type { CandidateFinding } from "../findings/validate.ts";
+import { findingId, validateCandidate } from "../findings/validate.ts";
+import type { CandidateFinding, EvidenceComparison } from "../findings/validate.ts";
 import { describeRepositoryIndex, indexRepository } from "../indexing/index-repository.ts";
 import { detectLanguage, detectProjectProfile } from "../languages/detect.ts";
 import type { RepositoryHotspot, RepositoryIndex } from "../findings/model.ts";
-import type { AiReviewerPort, FileSystemPort, GitPort, ReviewEvent, ReviewEventSink } from "../ports.ts";
+import type {
+  AiReviewRequest,
+  AiReviewTelemetry,
+  AiReviewerPort,
+  FileSystemPort,
+  GitPort,
+  ReviewEvent,
+  ReviewEventSink,
+} from "../ports.ts";
+import { aiReviewExecutionError } from "../ports.ts";
 import { buildFileContext, buildRelatedFiles } from "../repository/context.ts";
 import type { FileContext } from "../repository/context.ts";
 import { discoverRepository, isReviewableContent } from "../repository/discover.ts";
@@ -39,14 +60,23 @@ import { createSourceFile, createSourceIndex } from "../repository/source.ts";
 import type { SourceFile, SourceIndex } from "../repository/source.ts";
 import { detectTooling } from "../repository/tooling.ts";
 import { runDetectors } from "./detectors/index.ts";
-import { parseReviewResponse } from "./ai-reviewer.ts";
-import { buildSystemPrompt, buildUserPrompt } from "./prompt.ts";
+import { classifyReviewResponse, parseReviewResponse } from "./ai-reviewer.ts";
+import { collectLimitations, resolveReviewState } from "./limitations.ts";
+import { RELATED_FILE_LIMIT, buildSystemPrompt, buildUserPrompt } from "./prompt.ts";
 import { loadPromptBundle } from "./prompts.ts";
 
 const DEFAULT_MAX_FILES = 200;
 const DEFAULT_MAX_AI_FILES = 40;
 const DEFAULT_MAX_FINDINGS = 15;
 const DEFAULT_CONCURRENCY = 8;
+
+/**
+ * Prompt sizes are reported in UTF-8 bytes, because that is the unit a context
+ * window is measured in. `TextEncoder` is a web standard and is available in
+ * every runtime this core is embedded in; the core itself stays free of imports
+ * from any one of them.
+ */
+const UTF8 = new TextEncoder();
 
 export interface ReviewEngineOptions {
   fs: FileSystemPort;
@@ -67,6 +97,14 @@ export interface ReviewEngineOptions {
   baseBranch?: string | undefined;
   onEvent?: ReviewEventSink | undefined;
   concurrency?: number;
+  /**
+   * Record a per-file trace on the report.
+   *
+   * Off by default: a trace is a diagnostic, and the report is a product
+   * surface. When it is on, the report carries counts and reasons only — never
+   * source content, a prompt, or a model response.
+   */
+  collectTrace?: boolean | undefined;
 }
 
 export interface ReviewRequest {
@@ -230,13 +268,12 @@ export class ReviewEngine {
       concurrency,
     );
 
-    const allCandidates: Array<{ candidate: CandidateFinding; origin: "detector" | "ai" }> = [
-      ...detectorResult.candidates.map((candidate) => ({ candidate, origin: "detector" as const })),
-      ...aiResult.candidates.map((candidate) => ({ candidate, origin: "ai" as const })),
-    ];
+    const allCandidates: AttributedCandidate[] = [...detectorResult.candidates, ...aiResult.candidates];
 
     const rejected: RejectedCandidate[] = [];
     const validated: ReviewFinding[] = [];
+    /** One record per candidate, saying how far it travelled. */
+    const journeys: ReviewCandidateTrace[] = [];
 
     for (const entry of allCandidates) {
       // A diff-scoped review only accepts anchors on lines the change touched.
@@ -246,12 +283,20 @@ export class ReviewEngine {
 
       const outcome = validateCandidate(entry.candidate, index, { origin: entry.origin, changedLines });
 
-      if (outcome.ok) validated.push(outcome.finding);
-      else rejected.push(outcome.rejected);
+      if (outcome.ok) {
+        validated.push(outcome.finding);
+        journeys.push(acceptedJourney(entry, outcome.finding, outcome.comparison));
+      } else {
+        rejected.push(outcome.rejected);
+        journeys.push(rejectedJourney(entry, outcome.rejected));
+      }
     }
 
     const { findings: unique, merged } = dedupeFindings(validated);
     rejected.push(...merged);
+    for (const duplicate of merged) {
+      markJourney(journeys, findingId(duplicate.file, duplicate.line, duplicate.title), "dedupe");
+    }
 
     unique.sort(compareFindings);
     const findings = unique.slice(0, maxFindings);
@@ -264,7 +309,13 @@ export class ReviewEngine {
         reason: "over-finding-cap",
         detail: `dropped by the cap of ${maxFindings} findings`,
       });
+      markJourney(journeys, dropped.id, "policy-rejected");
     }
+
+    // The model stage's own tally, so the report says how much of the scope the
+    // model actually judged rather than how many candidates it happened to emit.
+    const aiReview =
+      this.options.aiReviewer === undefined ? null : summariseAiReview(aiResult, targets.length);
 
     const stats = buildStats({
       discovered: discovered.length,
@@ -273,7 +324,19 @@ export class ReviewEngine {
       rejections: rejected,
       merged: merged.length,
       findings,
+      aiReview,
     });
+
+    const limitations = collectLimitations({
+      ai: aiReview,
+      filesDiscovered: discovered.length,
+      filesReviewed: targets.length,
+      indexContentUnavailable: repositoryIndex.contentUnavailable,
+      indexTruncatedFiles: repositoryIndex.truncatedFiles,
+      diffAware: diffState.diffAware,
+      baseBranch: diffState.baseBranch,
+    });
+    const state = resolveReviewState(limitations);
 
     this.emit({
       type: "validation:done",
@@ -295,12 +358,17 @@ export class ReviewEngine {
     return {
       schema: "coderadar.review.findings.v1",
       verdict: findings.length === 0 ? "approve" : "needs-attention",
-      summary: buildSummary(findings, scope, stats, aiResult.summary),
+      summary: buildSummary(findings, scope, stats, aiResult.summary, state),
       scope,
       findings,
       rejected,
+      state,
+      limitations,
       stats,
       repositoryIndex,
+      ...(this.options.collectTrace === true
+        ? { trace: buildTrace({ targets, journeys, rejections: rejected, findings, aiStage: aiResult }) }
+        : {}),
     };
   }
 
@@ -420,8 +488,8 @@ export class ReviewEngine {
   private runDetectorStage(
     targets: readonly ReviewTarget[],
     sourcesByPath: ReadonlyMap<string, SourceFile>,
-  ): { candidates: CandidateFinding[]; failed: string[] } {
-    const candidates: CandidateFinding[] = [];
+  ): { candidates: AttributedCandidate[]; failed: string[] } {
+    const candidates: AttributedCandidate[] = [];
     const failed: string[] = [];
 
     for (const target of targets) {
@@ -429,7 +497,13 @@ export class ReviewEngine {
       if (source === undefined) continue;
 
       const result = runDetectors(source, target.file.language);
-      candidates.push(...result.candidates);
+      candidates.push(
+        ...result.candidates.map((candidate) => ({
+          candidate,
+          requestedFile: target.file.path,
+          origin: "detector" as const,
+        })),
+      );
       failed.push(...result.failed);
     }
 
@@ -440,6 +514,11 @@ export class ReviewEngine {
    * The model stage. A provider failure is reported as an event and the review
    * continues: deterministic findings are better than no review at all, and a
    * provider outage must never look like clean code.
+   *
+   * Every attempt's outcome is kept, not just its candidates. A response that
+   * could not be read and a file the model was never asked about produce no
+   * candidates either, and the difference between those three cases is the whole
+   * reason this method returns an outcome per file.
    */
   private async runAiStage(
     targets: readonly ReviewTarget[],
@@ -451,13 +530,17 @@ export class ReviewEngine {
     maxAiFiles: number,
     maxFindings: number,
     concurrency: number,
-  ): Promise<{ candidates: CandidateFinding[]; summary: string | null }> {
+  ): Promise<AiStageResult> {
     const reviewer: AiReviewerPort | undefined = this.options.aiReviewer;
-    if (reviewer === undefined) return { candidates: [], summary: null };
+    if (reviewer === undefined) {
+      return { candidates: [], summary: null, outcomes: new Map(), attempted: 0, selectedForModel: [] };
+    }
 
     const bundle = await loadPromptBundle(this.options.fs, this.options.promptsDir);
     const selected = prioritiseHotspots(targets, repositoryIndex.hotspots).slice(0, maxAiFiles);
-    if (selected.length === 0) return { candidates: [], summary: null };
+    if (selected.length === 0) {
+      return { candidates: [], summary: null, outcomes: new Map(), attempted: 0, selectedForModel: [] };
+    }
 
     const project = detectProjectProfile(index.paths());
     const tooling = await detectTooling(this.options.fs, pathBase);
@@ -468,10 +551,13 @@ export class ReviewEngine {
       .filter((part) => part !== "")
       .join(". ");
     const systemPrompt = buildSystemPrompt({ bundle, maxFindings, projectLine });
+    const systemPromptBytes = utf8Bytes(systemPrompt);
 
-    const candidates: CandidateFinding[] = [];
+    const candidates: AttributedCandidate[] = [];
+    const outcomes = new Map<string, AiAttemptOutcome>();
     let summary: string | null = null;
     let lastFailure: string | null = null;
+    let attempted = 0;
 
     this.emit({
       type: "ai:start",
@@ -487,30 +573,67 @@ export class ReviewEngine {
         ? (diffState.changedLinesByPath.get(target.file.path) ?? new Set<number>())
         : new Set<number>();
 
-      const userPrompt = buildUserPrompt({
-        bundle,
-        context,
+      const related = buildRelatedFiles(context, contexts);
+      const userPrompt = buildUserPrompt({ bundle, context, maxFindings, changedLines, related });
+      // What the request carried, in sizes and counts only. A trace that held
+      // prompt text would leak the code under review into a diagnostic artifact.
+      const request: ReviewRequestTrace = {
         maxFindings,
-        changedLines,
-        related: buildRelatedFiles(context, contexts),
-      });
+        systemPromptBytes,
+        userPromptBytes: utf8Bytes(userPrompt),
+        fileLines: context.file.lines.length,
+        contextWindows: context.windows.map((window) => ({ startLine: window.startLine, endLine: window.endLine })),
+        relatedFiles: related.slice(0, RELATED_FILE_LIMIT).map((file) => file.path),
+        changedLineCount: changedLines.size,
+      };
 
-      try {
-        const raw = await reviewer.review({ systemPrompt, userPrompt, maxFindings });
-        const parsed = parseReviewResponse(raw);
-        candidates.push(...parsed.candidates);
-        if (summary === null && parsed.summary !== "") summary = parsed.summary;
-      } catch (error) {
-        // Only the error class and message are recorded. Provider error bodies
-        // were already redacted at the transport layer.
-        lastFailure = error instanceof Error ? `${error.name}: ${error.message}` : "unknown provider failure";
+      attempted += 1;
+      const call = await callReviewer(reviewer, { systemPrompt, userPrompt, maxFindings });
+
+      if (!call.ok) {
+        // Only the exception class is recorded: a provider message can echo the
+        // source it was shown. Error bodies were already redacted in transport.
+        outcomes.set(target.file.path, {
+          outcome: "unavailable",
+          entriesDropped: 0,
+          modelErrorName: call.error instanceof Error ? call.error.name : "Error",
+          telemetry: call.telemetry,
+          request,
+        });
+        lastFailure = describeCallFailure(call.error, call.telemetry);
+        return;
       }
+
+      const parsed = parseReviewResponse(call.response);
+      outcomes.set(target.file.path, {
+        outcome: classifyReviewResponse(parsed),
+        entriesDropped: parsed.entriesDropped,
+        parser: {
+          shape: parsed.shape,
+          issues: parsed.issues,
+          entriesDropped: parsed.entriesDropped,
+          candidateCount: parsed.candidates.length,
+          answerField: parsed.answerField,
+        },
+        telemetry: call.telemetry,
+        request,
+      });
+      candidates.push(
+        ...parsed.candidates.map((candidate) => ({
+          candidate,
+          requestedFile: target.file.path,
+          origin: "ai" as const,
+        })),
+      );
+      if (summary === null && parsed.summary !== "") summary = parsed.summary;
     });
 
     if (lastFailure !== null && candidates.length === 0) {
+      const unreadable = [...outcomes.values()].filter((entry) => entry.outcome === "invalid").length;
+      const detail = unreadable > 0 ? `, ${unreadable} response(s) unreadable` : "";
       this.emit({
         type: "ai:failed",
-        message: `AI review unavailable, continuing with detectors only (${lastFailure})`,
+        message: `AI review unavailable, continuing with detectors only (${lastFailure}${detail})`,
       });
     }
 
@@ -520,8 +643,113 @@ export class ReviewEngine {
       counts: { candidates: candidates.length },
     });
 
-    return { candidates, summary };
+    return {
+      candidates,
+      summary,
+      outcomes,
+      attempted,
+      selectedForModel: selected.map((target) => target.file.path),
+    };
   }
+}
+
+/** The parser's own record of one answer. Absent when the call itself threw. */
+type ParserTrace = NonNullable<ReviewFileTrace["parser"]>;
+
+/** One file's model attempt, as it is recorded for the report. */
+interface AiAttemptOutcome {
+  outcome: AiReviewOutcome;
+  entriesDropped: number;
+  parser?: ParserTrace | undefined;
+  /** Exception class only: a provider message can echo the source it was shown. */
+  modelErrorName?: string | undefined;
+  /** What the call carried, in sizes and counts. Never prompt text. */
+  request: ReviewRequestTrace;
+  /** What the transport recorded. Empty for a reviewer that reports no telemetry. */
+  telemetry?: AiReviewTelemetry | undefined;
+}
+
+/**
+ * One reviewer call as the pipeline sees it.
+ *
+ * `telemetry` is absent, not empty, when the reviewer reports none: "this
+ * reviewer has no call record" and "this call made no attempt" are different
+ * facts, and only the second one belongs in a trace.
+ */
+type ReviewerCall =
+  | { ok: true; response: unknown; telemetry: AiReviewTelemetry | undefined }
+  | { ok: false; error: unknown; telemetry: AiReviewTelemetry | undefined };
+
+/**
+ * Calls the reviewer once, preferring its telemetry path when it has one.
+ *
+ * A reviewer that only implements `review()` is called exactly as before, with no
+ * call record: the trace then omits the provider rather than inventing one.
+ */
+async function callReviewer(reviewer: AiReviewerPort, request: AiReviewRequest): Promise<ReviewerCall> {
+  const withTelemetry = reviewer.reviewWithTelemetry;
+  if (withTelemetry === undefined) {
+    try {
+      return { ok: true, response: await reviewer.review(request), telemetry: undefined };
+    } catch (error) {
+      return { ok: false, error, telemetry: undefined };
+    }
+  }
+
+  try {
+    const execution = await withTelemetry.call(reviewer, request);
+    return execution.status === "response"
+      ? { ok: true, response: execution.response, telemetry: execution.telemetry }
+      : { ok: false, error: aiReviewExecutionError(execution), telemetry: execution.telemetry };
+  } catch (error) {
+    // A reviewer that throws out of its own telemetry path still degrades the
+    // review to the deterministic findings rather than failing it.
+    return { ok: false, error, telemetry: undefined };
+  }
+}
+
+/**
+ * A failure sentence built from the transport record.
+ *
+ * The provider's own prose is deliberately not repeated here: a provider error
+ * body can echo the source the model was shown. The attempt outcome and its status
+ * carry the same information in a form that is safe to show and to log. A
+ * reviewer with no call record falls back to its own message, as it always did.
+ */
+function describeCallFailure(error: unknown, telemetry: AiReviewTelemetry | undefined): string {
+  const name = error instanceof Error ? error.name : "Error";
+  if (telemetry === undefined || telemetry.attempts.length === 0) {
+    return error instanceof Error ? `${name}: ${error.message}` : `${name}: provider call failed`;
+  }
+
+  const last = telemetry.attempts[telemetry.attempts.length - 1];
+  const status = last?.status === null || last?.status === undefined ? "" : ` ${last.status}`;
+  return `${name}: ${last?.outcome ?? "no outcome"}${status} after ${telemetry.attempts.length} attempt(s)`;
+}
+
+/**
+ * A candidate plus the reviewed file it entered the pipeline under.
+ *
+ * Attribution is not the candidate's own `file` claim. A model that answers
+ * about a different file is exactly the case `file-not-in-scope` exists for, and
+ * a trace that filed such a candidate under the claimed path would report a file
+ * that produced nothing while the file actually sent to the model looked clean.
+ */
+interface AttributedCandidate {
+  candidate: CandidateFinding;
+  requestedFile: string;
+  origin: "detector" | "ai";
+}
+
+interface AiStageResult {
+  candidates: AttributedCandidate[];
+  summary: string | null;
+  /** Keyed by reviewed-file path. A file absent here was never sent. */
+  outcomes: ReadonlyMap<string, AiAttemptOutcome>;
+  /** Files the reviewer was actually called for. */
+  attempted: number;
+  /** Reviewed files the model budget selected, sent or not. */
+  selectedForModel: readonly string[];
 }
 
 /** True when `candidate` is `ancestor` itself or lives beneath it. */
@@ -578,6 +806,11 @@ function describeProject(
   return parts.join(", ");
 }
 
+/** UTF-8 length, so a prompt is measured the way a context window is. */
+function utf8Bytes(text: string): number {
+  return UTF8.encode(text).length;
+}
+
 function buildStats(input: {
   discovered: number;
   reviewed: number;
@@ -585,6 +818,7 @@ function buildStats(input: {
   rejections: readonly RejectedCandidate[];
   merged: number;
   findings: readonly ReviewFinding[];
+  aiReview: AiReviewSummary | null;
 }): ReviewStats {
   const rejectionsByReason: Record<string, number> = {};
   for (const rejection of input.rejections) {
@@ -603,7 +837,200 @@ function buildStats(input: {
     duplicatesMerged: input.merged,
     findingsKept: input.findings.length,
     rejectionsByReason,
+    aiReview: input.aiReview,
   };
+}
+
+/** The model stage's tally, from one outcome per call the reviewer made. */
+function summariseAiReview(result: AiStageResult, filesReviewed: number): AiReviewSummary {
+  const counts = { valid: 0, empty: 0, partial: 0, invalid: 0, unavailable: 0 };
+  let entriesDropped = 0;
+
+  for (const attempt of result.outcomes.values()) {
+    counts[attempt.outcome] += 1;
+    entriesDropped += attempt.entriesDropped;
+  }
+
+  return {
+    attempted: result.attempted,
+    valid: counts.valid,
+    empty: counts.empty,
+    partial: counts.partial,
+    invalid: counts.invalid,
+    unavailable: counts.unavailable,
+    entriesDropped,
+    // Reviewed files the model was never asked about. The AI budget is a real
+    // limitation, and leaving it implicit made it invisible in the report.
+    notSent: Math.max(0, filesReviewed - result.attempted),
+  };
+}
+
+interface TraceInput {
+  targets: readonly ReviewTarget[];
+  journeys: readonly ReviewCandidateTrace[];
+  rejections: readonly RejectedCandidate[];
+  findings: readonly ReviewFinding[];
+  aiStage: AiStageResult;
+}
+
+function buildTrace(input: TraceInput): ReviewFileTrace[] {
+  const selectedForModel = new Set(input.aiStage.selectedForModel);
+
+  return input.targets.map((target) => {
+    const file = target.file.path;
+    const attempt = input.aiStage.outcomes.get(file);
+    const fromFile = input.journeys.filter((journey) => journey.requestedFile === file);
+
+    return {
+      file,
+      selected: true,
+      selectedForModel: selectedForModel.has(file),
+      sentToModel: attempt !== undefined,
+      ...(attempt === undefined
+        ? {}
+        : {
+            modelOutcome: attempt.outcome,
+            ...(attempt.modelErrorName === undefined ? {} : { modelErrorName: attempt.modelErrorName }),
+            request: attempt.request,
+            ...(attempt.parser === undefined ? {} : { parser: attempt.parser }),
+            // Provider and model are only claimed when the reviewer reported a
+            // call record: an absent record is not evidence of either. A replay
+            // reports a record with no attempts, which says no call was made.
+            ...(attempt.telemetry === undefined
+              ? {}
+              : { provider: attempt.telemetry.provider, model: attempt.telemetry.model, response: attempt.telemetry }),
+          }),
+      candidateDetails: fromFile,
+      candidates: {
+        detector: fromFile.filter((journey) => journey.origin === "detector").length,
+        ai: fromFile.filter((journey) => journey.origin === "ai").length,
+      },
+      findings: input.findings.filter((finding) => finding.location.file === file).length,
+      rejections: countRejections(input.rejections, file),
+    };
+  });
+}
+
+function countRejections(rejections: readonly RejectedCandidate[], file: string): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const rejection of rejections) {
+    if (rejection.file !== file) continue;
+    counts[rejection.reason] = (counts[rejection.reason] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/** A candidate that passed the bar, with the comparison the evidence gate ran. */
+function acceptedJourney(
+  entry: AttributedCandidate,
+  finding: ReviewFinding,
+  comparison: EvidenceComparison,
+): ReviewCandidateTrace {
+  return {
+    requestedFile: entry.requestedFile,
+    origin: entry.origin,
+    file: finding.location.file,
+    line: finding.location.line,
+    lineEnd: finding.location.lineEnd,
+    fieldsPresent: fieldPresence(entry.candidate),
+    evidence: {
+      quoteCount: comparison.quotes.length,
+      quotesFound: comparison.quotesFound,
+      anchored: comparison.anchored,
+    },
+    validator: "accepted",
+    finalOutcome: "retained",
+    findingId: finding.id,
+  };
+}
+
+/**
+ * A rejected candidate, with the comparison behind the rejection when it was the
+ * evidence gate that rejected it. `anchored: null` is a candidate that never
+ * reached the gate, which is not the same as a comparison that failed.
+ */
+function rejectedJourney(entry: AttributedCandidate, rejection: RejectedCandidate): ReviewCandidateTrace {
+  const diagnostics = rejection.diagnostics;
+  const compared = diagnostics?.quotesFound !== undefined;
+
+  return {
+    requestedFile: entry.requestedFile,
+    origin: entry.origin,
+    file: rejection.file,
+    line: rejection.line,
+    lineEnd: rejection.lineEnd,
+    fieldsPresent: fieldPresence(entry.candidate),
+    evidence: {
+      quoteCount: diagnostics?.quotes?.length ?? 0,
+      quotesFound: compared ? [...(diagnostics?.quotesFound ?? [])] : [],
+      anchored: compared ? false : null,
+    },
+    validator: "rejected",
+    rejectionReason: rejection.reason,
+    finalOutcome: "rejected",
+  };
+}
+
+function fieldPresence(candidate: CandidateFinding): ReviewCandidateTrace["fieldsPresent"] {
+  const filled = (value: string): boolean => value.trim() !== "";
+  return {
+    title: filled(candidate.title),
+    problem: filled(candidate.problem),
+    why: filled(candidate.why),
+    impact: filled(candidate.impact),
+    evidence: filled(candidate.evidence),
+    fix: filled(candidate.fix),
+  };
+}
+
+/**
+ * Relabels a candidate that cleared validation but did not reach the report.
+ *
+ * The link back to the candidate is the finding id, which is derived from the
+ * anchor and the title and can therefore be recomputed from the rejection's own
+ * fields. When two candidates are similar enough to share an id, one was kept
+ * and one was merged; which one lost is decided by quality, not by anything a
+ * trace holds, so the first still-retained match is relabelled and the pair is
+ * still reported as one kept and one merged.
+ */
+function markJourney(
+  journeys: readonly ReviewCandidateTrace[],
+  id: string,
+  outcome: "dedupe" | "policy-rejected",
+): void {
+  const journey = journeys.find((entry) => entry.findingId === id && entry.finalOutcome === "retained");
+  if (journey !== undefined) journey.finalOutcome = outcome;
+}
+
+/**
+ * What a summary says when the review is not complete.
+ *
+ * A model's own summary is not enough here: a model that never read a file cannot
+ * describe the review, and the deterministic sentence must not read like a clean
+ * bill of health either. Both are augmented with the state, so a run with zero
+ * findings behind a broken stage cannot read as clean code.
+ */
+const INCOMPLETE_NOTICE: Record<Exclude<ReviewState, "complete">, string> = {
+  partial: "The review covered less than the full scope; see the recorded limitations.",
+  degraded:
+    "This review is incomplete: a stage did not produce a result, so a missing finding is not evidence of clean code.",
+  failed: "The review did not complete, so this result is not a statement about the code.",
+};
+
+function buildSummary(
+  findings: readonly ReviewFinding[],
+  scope: ReviewScope,
+  stats: ReviewStats,
+  aiSummary: string | null,
+  state: ReviewState,
+): string {
+  const notice = state === "complete" ? "" : INCOMPLETE_NOTICE[state];
+  const body =
+    aiSummary !== null && aiSummary !== ""
+      ? aiSummary
+      : deterministicSummary(findings, scope, stats);
+
+  return notice === "" ? body : `${body} ${notice}`;
 }
 
 /**
@@ -611,14 +1038,11 @@ function buildStats(input: {
  * only what the numbers support, because a summary that overstates coverage is
  * worse than a terse one.
  */
-function buildSummary(
+function deterministicSummary(
   findings: readonly ReviewFinding[],
   scope: ReviewScope,
   stats: ReviewStats,
-  aiSummary: string | null,
 ): string {
-  if (aiSummary !== null && aiSummary !== "") return aiSummary;
-
   if (findings.length === 0) {
     const compared =
       scope.diffAware && scope.baseBranch !== null ? ` Changes were compared against ${scope.baseBranch}.` : "";

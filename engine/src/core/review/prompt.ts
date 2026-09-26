@@ -69,6 +69,14 @@ export function formatLineRanges(lines: ReadonlySet<number>): string {
   return ranges.join(", ");
 }
 
+/**
+ * How many imported files the prompt may list.
+ *
+ * Exported because a trace has to state what the request actually carried, and
+ * a second copy of this cap would let the two drift apart.
+ */
+export const RELATED_FILE_LIMIT = 10;
+
 export function buildUserPrompt(input: ReviewerPromptInput): string {
   const { context } = input;
   const sections: string[] = [];
@@ -98,7 +106,9 @@ export function buildUserPrompt(input: ReviewerPromptInput): string {
   // Imported files supply the contract this file has to honour. Their bodies
   // are never sent: the export surface is what a caller can depend on.
   if (input.related !== undefined && input.related.length > 0) {
-    const lines = input.related.slice(0, 10).map((related) => `  ${related.path} | ${related.profile}`);
+    const lines = input.related
+      .slice(0, RELATED_FILE_LIMIT)
+      .map((related) => `  ${related.path} | ${related.profile}`);
     sections.push(
       [
         `These reviewed files are imported by the file above. Their bodies are not shown.`,

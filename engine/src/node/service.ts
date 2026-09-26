@@ -20,6 +20,7 @@ import path from "node:path";
 import { createNodeFileSystem } from "../adapters/node-fs.ts";
 import { createNodeGit } from "../adapters/node-git.ts";
 import { AiReviewerError, createHttpAiReviewer } from "../core/review/ai-reviewer.ts";
+import { AI_NOT_REQUESTED_DETAIL, AI_UNAVAILABLE_DETAIL, withLimitation } from "../core/review/limitations.ts";
 import { ReviewEngine } from "../core/review/engine.ts";
 import type { ReviewReport } from "../core/findings/model.ts";
 import type { AiReviewerPort, FileSystemPort, GitPort, ReviewEvent, ReviewEventSink } from "../core/ports.ts";
@@ -71,6 +72,15 @@ export interface ReviewServiceResult {
   report: ReviewReport;
   /** True when the deterministic checks ran alone. */
   aiSkipped: boolean;
+  /**
+   * True when the caller asked for the model in this run.
+   *
+   * Kept apart from `aiSkipped` because the two mean opposite things to the
+   * person reading the result: a model that was asked for and did not run is a
+   * gap, while a model left out on purpose is a choice, and only the report's own
+   * limitations can tell them apart once the run is over.
+   */
+  aiRequested: boolean;
 }
 
 export interface SourceWindowRequest {
@@ -257,14 +267,25 @@ export function createReviewService(options: ReviewServiceOptions): ReviewServic
           ...(onEvent === undefined ? {} : { onEvent }),
         });
 
-        const report = await engine.review({ target: request.target });
+        const reviewed = await engine.review({ target: request.target });
 
         // The engine returns normally even when the caller cancelled, so the
         // cancellation is only observable here before the report is published.
         if (controller.signal.aborted) throw new ReviewCancelledError();
 
+        // Whether a model was wanted is only knowable here, so the limitation is
+        // recorded here. A request for the model that could not be served
+        // degrades the review; leaving it out narrows it. Neither may be silent.
+        const report =
+          reviewer !== null
+            ? reviewed
+            : withLimitation(reviewed, {
+                code: wantsAi ? "ai-unavailable" : "ai-not-requested",
+                detail: wantsAi ? AI_UNAVAILABLE_DETAIL : AI_NOT_REQUESTED_DETAIL,
+              });
+
         lastPathBase = report.scope.pathBase;
-        return { report, aiSkipped: reviewer === null };
+        return { report, aiSkipped: reviewer === null, aiRequested: wantsAi };
       } finally {
         running = false;
         controller = null;

@@ -51,3 +51,13 @@ docs
 !docs/
 docs/*
 !docs/screenshots/
+
+# Architecture decisions are documentation, like the screenshots, and are
+# referenced from the README. Un-ignored the same way, so a decision does not
+# exist only inside the session that made it.
+!docs/adr/
+
+# Model recordings are local evidence, not source. A recording holds the raw
+# model response, which quotes the code that was reviewed, so it is produced per
+# machine and never committed. `CODERADAR_REPLAY_DIR` moves it elsewhere.
+.coderadar/
