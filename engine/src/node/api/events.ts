@@ -15,7 +15,8 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { WireScanDetail } from "../api-contract.ts";
+import type { WireScanDetail, WireSessionStatus } from "../api-contract.ts";
+import { isTerminalSessionStatus } from "../api-contract.ts";
 import type { SecurityEnvelope } from "./security.ts";
 import type { SessionRecord, SessionStore } from "./session-store.ts";
 
@@ -24,6 +25,21 @@ import type { SessionRecord, SessionStore } from "./session-store.ts";
  * slow or dead SSE client must not hold the review open.
  */
 const KEEP_ALIVE_MS = 15_000;
+
+/**
+ * The event each status is delivered as.
+ *
+ * A stopped review is its own event rather than a failure: the renderer paints
+ * them differently, and a client that treats "stopped" as "failed" tells the user
+ * something went wrong when nothing did.
+ */
+const EVENT_NAME_BY_STATUS: Record<WireSessionStatus, string> = {
+  queued: "scan_progress",
+  scanning: "scan_progress",
+  completed: "scan_completed",
+  failed: "scan_failed",
+  cancelled: "scan_cancelled",
+};
 
 export interface StreamScanEventsOptions {
   request: IncomingMessage;
@@ -46,8 +62,8 @@ export function streamScanEvents({ request, response, record, store, security }:
     response.write(`event: ${eventName}\ndata: ${JSON.stringify(detail)}\n\n`);
   };
 
-  const eventNameFor = (): string => (record.status === "completed" ? "scan_completed" : "scan_failed");
-  const isTerminal = (): boolean => record.status === "completed" || record.status === "failed";
+  const eventNameFor = (): string => EVENT_NAME_BY_STATUS[record.status];
+  const isTerminal = (): boolean => isTerminalSessionStatus(record.status);
 
   write(isTerminal() ? eventNameFor() : "scan_progress", store.detailFor(record));
   if (isTerminal()) {

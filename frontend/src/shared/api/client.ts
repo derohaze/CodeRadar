@@ -34,6 +34,23 @@ export function tokenQuery(): string {
   return API_TOKEN === null ? "" : `?token=${encodeURIComponent(API_TOKEN)}`;
 }
 
+/**
+ * A request the API refused, carrying the status it answered with.
+ *
+ * The status is kept because two failures with the same text are not the same
+ * problem: a 409 from the review API means one review is already running and has
+ * a way out the caller can offer, while a 400 has nothing to offer.
+ */
+export class ApiRequestError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
@@ -74,7 +91,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       typeof body?.detail === "string" && body.detail.trim().length > 0
         ? body.detail
         : fallback;
-    throw new Error(message);
+    throw new ApiRequestError(message, response.status);
   }
 
   if (response.status === 204) {

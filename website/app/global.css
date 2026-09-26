@@ -3,6 +3,14 @@
 @import 'fumadocs-ui/css/preset.css';
 @plugin 'tailwindcss-animate';
 
+/* The app demo sits inside a route group whose directory name contains
+   parentheses. Tailwind's automatic source detection skips that path, so the
+   demo's unique utilities were never generated and the window rendered
+   transparent over the hero art. Point at the sources explicitly. */
+@source '../app';
+@source '../components';
+@source '../lib';
+
 /* Hide scrollbars while keeping scrollability (used by the dashboard demo). */
 .no-scrollbar {
   scrollbar-width: none;
@@ -13,10 +21,105 @@
   display: none;
 }
 
+/* Same utility under the name the desktop app uses, so the demo's scroll
+   containers can carry the app's own class verbatim. */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* The thinking-orb renderer sets the canvas dimensions inline; this keeps it
    from sitting on the text baseline when it lands inside a text row. */
 [data-thinking-orb] {
   display: block;
+}
+
+/* The app's wordmark is set in a serif face; the marketing site has no serif
+   token, so the demo carries the same stack the desktop app declares. */
+.cr-brand {
+  font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+}
+
+/* ------------------------------------------------------------------ */
+/* CodeRadar desktop-app surface                                       */
+/*                                                                     */
+/* The demo window on the home page is the same interface the app      */
+/* ships, so its palette is the app's own token set (frontend/src/     */
+/* index.css), scoped to `.coderadar-app` so it cannot reach the       */
+/* marketing theme above. Both modes are carried so the demo follows   */
+/* the site's theme toggle the way the app follows its own.            */
+/* ------------------------------------------------------------------ */
+.coderadar-app {
+  color-scheme: dark;
+
+  /* Painted here rather than only through a utility class, so the window can
+     never render transparent over the hero art. */
+  background-color: hsl(var(--cr-workspace));
+  color: hsl(var(--cr-text-primary));
+
+  --cr-workspace: 0 0% 7%;
+  --cr-surface: 240 6% 12.5%;
+  --cr-sidebar: 0 0% 6.5%;
+  --cr-card: 240 6% 13%;
+  --cr-tile: 240 5% 18%;
+  --cr-muted: 240 5% 14.5%;
+
+  --cr-border: 240 4% 20%;
+  --cr-border-soft: 240 5% 15.5%;
+
+  --cr-text-primary: 240 12% 94%;
+  --cr-text-secondary: 240 6% 68%;
+  --cr-text-tertiary: 240 4% 54%;
+
+  --cr-primary: 240 8% 96%;
+  --cr-primary-foreground: 0 0% 7%;
+
+  --cr-success: 152 55% 52%;
+  --cr-success-bg: 152 40% 12%;
+  --cr-high: 38 88% 60%;
+  --cr-high-bg: 38 48% 13%;
+  --cr-critical: 352 74% 60%;
+  --cr-critical-bg: 352 45% 13%;
+  --cr-progress: 239 68% 65%;
+
+  --cr-titlebar: 0 0% 10%;
+}
+
+.coderadar-app[data-theme='light'] {
+  color-scheme: light;
+
+  --cr-workspace: 0 0% 100%;
+  --cr-surface: 0 0% 100%;
+  --cr-sidebar: 0 0% 100%;
+  --cr-card: 0 0% 100%;
+  --cr-tile: 0 0% 96%;
+  --cr-muted: 0 0% 96%;
+
+  --cr-border: 0 0% 84%;
+  --cr-border-soft: 0 0% 88%;
+
+  --cr-text-primary: 0 0% 11%;
+  --cr-text-secondary: 0 0% 38%;
+  --cr-text-tertiary: 0 0% 52%;
+
+  --cr-primary: 0 0% 10%;
+  --cr-primary-foreground: 0 0% 98%;
+
+  --cr-success: 152 60% 34%;
+  --cr-success-bg: 152 55% 95%;
+  --cr-high: 38 85% 42%;
+  --cr-high-bg: 38 85% 95%;
+  --cr-critical: 0 68% 52%;
+  --cr-critical-bg: 0 75% 96%;
+  --cr-progress: 212 70% 50%;
+
+  --cr-titlebar: 0 0% 100%;
 }
 
 @theme {

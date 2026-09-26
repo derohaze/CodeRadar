@@ -45,6 +45,12 @@ export interface SessionRecord {
   elapsedSeconds: number;
   report: ReviewReport | null;
   errorMessage: string | null;
+  /**
+   * Aborts this session's review, whether it is running or still waiting for a
+   * turn. Owned here rather than by the service because the unit a user cancels is
+   * a session: a review queued behind another one has no service-side signal yet.
+   */
+  readonly abort: AbortController;
   /** Live event streams watching this session. Each is called with every detail. */
   subscribers: Set<(detail: WireScanDetail) => void>;
 }
@@ -149,12 +155,15 @@ export function createSessionStore(): SessionStore {
         targetType: seed.targetType,
         preset: seed.preset,
         scanMode: seed.scanMode,
-        status: "scanning",
-        progress: 2,
-        phaseProgress: 2,
-        currentPhase: "Discovery",
-        progressMessage: "Starting the review",
-        progressLogs: ["Starting the review"],
+        // A session starts life waiting: the engine reviews one target at a time,
+        // so being accepted is not the same as being started.
+        status: "queued",
+        progress: 0,
+        phaseProgress: 0,
+        currentPhase: "Queued",
+        progressMessage: "Waiting for a free review slot",
+        progressLogs: ["Waiting for a free review slot"],
+        abort: new AbortController(),
         createdAt: now,
         completedAt: null,
         elapsedSeconds: 0,

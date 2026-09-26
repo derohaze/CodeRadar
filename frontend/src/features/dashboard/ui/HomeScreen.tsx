@@ -97,7 +97,7 @@ export function HomeScreen({ onStartScan, defaultPreset, defaultScanMode }: Home
             <div>
               <p className="text-[11px] font-medium tracking-wide text-white/50">Review mode</p>
               <Select value={scanMode} onValueChange={(v) => setScanMode(v as "fast" | "deep")}>
-                <SelectTrigger className="mt-1.5 h-8 rounded-full border border-white/10 bg-[#232323] text-[12.5px] text-white transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] focus:ring-0">
+                <SelectTrigger className="mt-1.5 h-8 rounded-full border border-white/10 bg-[#232323] text-[12.5px] text-white transition-all duration-500 ease-smooth focus:ring-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border border-white/10 bg-[#232323] text-white shadow-[0_16px_32px_rgba(0,0,0,0.5)]">
@@ -112,7 +112,7 @@ export function HomeScreen({ onStartScan, defaultPreset, defaultScanMode }: Home
               <div className="relative mt-1.5 inline-flex rounded-full border border-white/10 bg-[#232323] p-0.5">
                 <div
                   aria-hidden="true"
-                  className="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-white shadow-sm transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-transform"
+                  className="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-white shadow-sm transition-all duration-500 ease-smooth will-change-transform"
                   style={{
                     transform: targetType === "folder" ? "translateX(0)" : "translateX(calc(100% + 4px))",
                   }}
@@ -129,7 +129,7 @@ export function HomeScreen({ onStartScan, defaultPreset, defaultScanMode }: Home
                         setTargetType(opt.id as "folder" | "file");
                         setTargetPath("");
                       }}
-                      className={`relative z-10 inline-flex min-w-[84px] items-center justify-center gap-1.5 rounded-full px-4 py-1.5 text-[12px] font-medium transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+                      className={`relative z-10 inline-flex min-w-[84px] items-center justify-center gap-1.5 rounded-full px-4 py-1.5 text-[12px] font-medium transition-all duration-500 ease-smooth ${
                         active ? "text-black" : "text-white/60 hover:text-white"
                       }`}
                     >
@@ -138,9 +138,9 @@ export function HomeScreen({ onStartScan, defaultPreset, defaultScanMode }: Home
                         size={12}
                         strokeWidth={1.7}
                         color="currentColor"
-                        className={`transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${active ? "translate-y-0 opacity-100" : "translate-y-0 opacity-70"}`}
+                        className={`transition-all duration-500 ease-smooth ${active ? "translate-y-0 opacity-100" : "translate-y-0 opacity-70"}`}
                       />
-                      <span className="transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]">{opt.label}</span>
+                      <span className="transition-all duration-500 ease-smooth">{opt.label}</span>
                     </button>
                   );
                 })}
@@ -165,7 +165,7 @@ export function HomeScreen({ onStartScan, defaultPreset, defaultScanMode }: Home
                   {pickingPath ? "Opening…" : targetType === "folder" ? "Choose folder" : "Choose file"}
                 </TextMorph>
               </button>
-              <span className="truncate text-[12px] text-white/50 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]" title={selectedTargetName}>
+              <span className="truncate text-[12px] text-white/50 transition-all duration-500 ease-smooth" title={selectedTargetName}>
                 {selectedTargetName}
               </span>
             </div>

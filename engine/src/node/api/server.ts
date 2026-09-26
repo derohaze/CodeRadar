@@ -25,6 +25,16 @@ import { createSessionStore } from "./session-store.ts";
 import type { ReviewService } from "../service.ts";
 import { SourceWindowError } from "../source-window.ts";
 
+/** One finished request, as the caller's request log receives it. */
+export interface RequestLogEntry {
+  readonly method: string;
+  /** Path only. The launch token can arrive as a query parameter, and a log is
+   * not a place to write a secret. */
+  readonly path: string;
+  readonly status: number;
+  readonly durationMs: number;
+}
+
 export interface ReviewApiServerOptions {
   service: ReviewService;
   /** Secret the renderer must present. Generated per launch by the caller. */
@@ -33,6 +43,14 @@ export interface ReviewApiServerOptions {
   port?: number;
   /** Extra browser origins to accept, for a dev server on another port. */
   allowedOrigins?: readonly string[];
+  /**
+   * Called once per finished request.
+   *
+   * Left unset by the embedded server on purpose: Electron must not write the
+   * app's stdout, and the 269-test suite must not print a line per request.
+   * Only `serve.ts` supplies one.
+   */
+  logRequest?: ((entry: RequestLogEntry) => void) | undefined;
 }
 
 export interface ReviewApiServer {
@@ -49,7 +67,20 @@ export async function startReviewApiServer(options: ReviewApiServerOptions): Pro
   const store = createSessionStore();
   const route = createRouter({ service: options.service, store, security, token: options.token, host });
 
+  const logRequest = options.logRequest;
   const server: Server = createServer((request: IncomingMessage, response: ServerResponse) => {
+    if (logRequest !== undefined) {
+      const startedAt = Date.now();
+      response.once("finish", () => {
+        logRequest({
+          method: request.method ?? "GET",
+          path: (request.url ?? "/").split("?")[0] ?? "/",
+          status: response.statusCode,
+          durationMs: Date.now() - startedAt,
+        });
+      });
+    }
+
     void route(request, response).catch((error: unknown) => {
       // A refused source window is a bad request, not a server fault: the
       // renderer asked for a file outside the reviewed scope.

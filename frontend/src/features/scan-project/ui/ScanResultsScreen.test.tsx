@@ -538,4 +538,68 @@ describe("ScanResultsScreen", () => {
     // No limitation card exists for a complete review.
     expect(screen.queryByText(/not proof that the code is unsafe, and not findings/i)).not.toBeInTheDocument();
   });
+
+  it("opens the full report page for a review that produced one", () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+
+    render(
+      <ScanResultsScreen
+        session={reportableSession()}
+        onSelectFinding={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /full report/i }));
+
+    // The page is served by the local engine for this session, and it is opened
+    // rather than fetched: it is a document, not data for this screen.
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(String(open.mock.calls[0]?.[0])).toContain("/scans/session-2/report");
+    open.mockRestore();
+  });
+
+  it("offers no report page for a review that failed before producing one", () => {
+    const session = reportableSession();
+    session.reviewState = "failed";
+
+    render(<ScanResultsScreen session={session} onSelectFinding={vi.fn()} />);
+
+    expect(screen.queryByRole("button", { name: /full report/i })).not.toBeInTheDocument();
+  });
 });
+
+/** A completed review of a small repo: the smallest session a report page exists for. */
+function reportableSession(): ScanSessionDetail {
+  return {
+    verdict: "safe",
+    findings: [],
+    candidateFindings: [],
+    rejectedCandidates: [],
+    rejectionsByReason: {},
+    reviewState: "complete",
+    limitations: [],
+    aiReview: { attempted: 3, valid: 0, empty: 3, partial: 0, invalid: 0, unavailable: 0, entriesDropped: 0, notSent: 0 },
+    issues: { critical: 0, high: 0, medium: 0, low: 0 },
+    session: {
+      id: "session-2",
+      title: "repo",
+      repo: "repo",
+      time: "1m",
+      status: "completed",
+      scanMode: "deep",
+      securityScore: null,
+      repositorySummary: "Reviewed 3 files",
+      coveragePercent: 100,
+      reviewedFilesCount: 3,
+      eligibleFilesCount: 3,
+      candidateFindingsCount: 0,
+      skippedFilesCount: 0,
+      preset: "balanced",
+      createdAt: "2026-04-15T20:00:00Z",
+      updatedAt: "2026-04-15T20:01:00Z",
+      lastVerification: null,
+      workflowSummary: null,
+      annotations: [],
+    },
+  } as unknown as ScanSessionDetail;
+}

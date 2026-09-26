@@ -17,6 +17,7 @@ export {
   deleteScanSession,
   getScanSession,
   listSessions,
+  scanReportUrl,
   startScan,
 } from "./endpoints/sessions";
 export { listProviderModels, listProviders, testProvider } from "./endpoints/providers";

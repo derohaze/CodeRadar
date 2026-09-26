@@ -16,7 +16,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { startReviewApiServer, type ReviewApiServer } from "../src/node/api/server.ts";
-import { createReviewService } from "../src/node/service.ts";
+import { createReviewService, ReviewCancelledError, type ReviewService } from "../src/node/service.ts";
 import { createSettingsStore } from "../src/node/settings.ts";
 import type { GitPort } from "../src/core/ports.ts";
 import type { WireFinding, WireScanDetail, WireSession } from "../src/node/api-contract.ts";
@@ -82,6 +82,7 @@ describe("the local review API security envelope", () => {
     expect((await fetch(url("/settings/runtime"))).status).toBe(401);
     expect((await fetch(url("/settings/providers"))).status).toBe(401);
     expect((await fetch(url("/scans/does-not-exist"))).status).toBe(401);
+    expect((await fetch(url("/scans/does-not-exist/report"))).status).toBe(401);
   });
 
   it("refuses a request that presents the wrong token", async () => {
@@ -230,6 +231,41 @@ describe("the local review API review flow", () => {
 
     expect(text).toContain("event: scan_completed");
     expect(text).toContain('"status":"completed"');
+  });
+
+  it("serves the finished review as a page a person can open and share", async () => {
+    const sessions = (await (await authorized("/sessions")).json()) as WireSession[];
+    const finished = sessions.find((session) => session.findings_count === 10);
+    if (finished === undefined) throw new Error("expected a completed session");
+
+    const response = await authorized(`/scans/${finished.id}/report`);
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    // The page is the same report, and it is a document rather than a script:
+    // nothing the reviewed code put in a title or a quote can run here.
+    expect(html).toContain("CodeRadar review report");
+    expect(html).toContain("default-src 'none'");
+    expect(html).not.toContain("<script");
+  });
+
+  it("refuses a report for a session that does not exist", async () => {
+    expect((await authorized("/scans/gone/report")).status).toBe(404);
+  });
+
+  it("accepts the report's token in the query string, which is how a page presents it", async () => {
+    // A window opened on a page cannot send a header, so the address the renderer
+    // builds carries the token in the query. This pins that address against the
+    // server it has to reach.
+    const sessions = (await (await authorized("/sessions")).json()) as WireSession[];
+    const finished = sessions.find((session) => session.findings_count === 10);
+    if (finished === undefined) throw new Error("expected a completed session");
+
+    const response = await fetch(`${url(`/scans/${finished.id}/report`)}?token=${TOKEN}`);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("CodeRadar review report");
   });
 
   it("refuses a finding explanation for a session that no longer exists", async () => {
@@ -566,5 +602,102 @@ describe("the local review API scope controls", () => {
 
     // The breakdown is the engine's own tally, not a second computation.
     expect(fast.rejections_by_reason["anchor-outside-changed-lines"]).toBeGreaterThanOrEqual(1);
+  });
+});
+
+/**
+ * Deleting a session has to release the engine.
+ *
+ * A review holds the engine's single review slot until it finishes, and both the
+ * progress screen's "Stop review" and the sidebar's delete remove the session. If
+ * removing it did not also stop its review, the slot stayed taken for the rest of
+ * the process: every later start was refused with 409 while the app told the user
+ * the review had stopped. The service here is a stub on purpose — a real review of
+ * a fixture finishes in milliseconds, which is exactly why this survived.
+ */
+describe("deleting a session stops the review it started", () => {
+  const unused = (): never => {
+    throw new Error("the stub service does not implement this method");
+  };
+
+  /** A service whose review never answers on its own, so only cancellation ends it. */
+  function stubService(): { service: ReviewService; cancels: () => number } {
+    let controller: AbortController | null = null;
+    let running = false;
+    let cancels = 0;
+
+    const service: ReviewService = {
+      providers: unused,
+      settings: unused,
+      updateSettings: unused,
+      listModels: unused,
+      testProvider: unused,
+      readSource: unused,
+      isRunning: () => running,
+      cancelReview: async () => {
+        cancels += 1;
+        controller?.abort();
+      },
+      startReview: async () => {
+        controller = new AbortController();
+        running = true;
+        try {
+          await new Promise<never>((_resolve, reject) => {
+            controller?.signal.addEventListener("abort", () => reject(new ReviewCancelledError()), { once: true });
+          });
+          throw new ReviewCancelledError();
+        } finally {
+          running = false;
+          controller = null;
+        }
+      },
+    };
+
+    return { service, cancels: () => cancels };
+  }
+
+  function startAt(origin: string): Promise<Response> {
+    return fetch(`${origin}/api/v1/scans`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-coderadar-token": TOKEN },
+      body: JSON.stringify({ source_path: BUGGY_FIXTURE, target_type: "folder", preset: "balanced", scan_mode: "deep" }),
+    });
+  }
+
+  function deleteAt(origin: string, id: string): Promise<Response> {
+    return fetch(`${origin}/api/v1/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { "x-coderadar-token": TOKEN },
+    });
+  }
+
+  it("frees the slot for the next review, and signals nothing for an unknown session", async () => {
+    const { service, cancels } = stubService();
+    const stubServer = await startReviewApiServer({ service, token: TOKEN, port: 0 });
+    const origin = stubServer.origin;
+
+    try {
+      const started = await startAt(origin);
+      expect(started.status).toBe(200);
+      const live = (await started.json()) as WireScanDetail;
+
+      // One review at a time is what the user runs into, and it is the state this
+      // test has to get out of.
+      expect((await startAt(origin)).status).toBe(409);
+
+      expect((await deleteAt(origin, live.session.id)).status).toBe(204);
+      expect(cancels()).toBe(1);
+
+      // The cancelled run settles in a microtask; the slot is free after it.
+      await Bun.sleep(50);
+      expect((await startAt(origin)).status).toBe(200);
+
+      // Deleting an id that names no session must not abort the review that is
+      // running: the cancel above is the only one so far.
+      expect((await deleteAt(origin, "no-such-session")).status).toBe(204);
+      expect(cancels()).toBe(1);
+    } finally {
+      await stubServer.close();
+    }
   });
 });

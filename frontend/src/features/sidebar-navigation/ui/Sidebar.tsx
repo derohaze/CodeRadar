@@ -68,12 +68,12 @@ export function Sidebar({
 
   return (
     <div
-      className="relative h-full shrink-0 overflow-hidden transition-[width] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+      className="relative h-full shrink-0 overflow-hidden transition-[width] duration-500 ease-smooth"
       style={{ width: isCollapsed ? 0 : 300 }}
       aria-hidden={isCollapsed}
     >
       <aside
-        className="absolute inset-y-0 left-0 flex w-[300px] min-h-0 flex-col overflow-hidden bg-surface-sidebar transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-transform"
+        className="absolute inset-y-0 left-0 flex w-[300px] min-h-0 flex-col overflow-hidden bg-surface-sidebar transition-[transform,opacity] duration-500 ease-smooth will-change-transform"
         style={{
           ...tokens,
           transform: isCollapsed ? "translateX(-16px)" : "translateX(0)",

@@ -9,7 +9,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "serve": "bun run src/node/serve.ts",
+    "start": "bun run server.ts",
+    "serve": "bun run server.ts",
     "review": "bun run src/cli.ts review",
     "score": "bun run scripts/score-review.ts",
     "benchmark": "bun run scripts/benchmark.ts",

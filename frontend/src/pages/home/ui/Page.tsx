@@ -21,11 +21,13 @@ import type { Finding } from "@/entities/finding/model/types";
 import type { Session } from "@/entities/session/model/types";
 import { useScanStream } from "@/pages/home/model/useScanStream";
 import { useWorkspaceSessions } from "@/pages/home/model/useWorkspaceSessions";
+import { ApiRequestError } from "@/shared/api/client";
 import {
   deleteScanSession,
   getRepoHotspots,
   getRepoIntelligenceSummary,
   getScanSession,
+  listSessions,
   startScan,
   type ScanSessionDetail,
   type StartScanPayload,
@@ -181,22 +183,63 @@ export default function Page() {
     if (!runtimeSettings.autoOpenResults && pendingCompletionSessionId) setPendingCompletionSessionId(null);
   }, [pendingCompletionSessionId, runtimeSettings.autoOpenResults]);
 
+  /** Starts a review and moves the workspace onto it. */
+  const startReviewOn = useCallback(async (payload: StartScanPayload): Promise<void> => {
+    const detail = await startScan(payload);
+    setActiveSession(detail);
+    setActiveSessionId(detail.session.id);
+    setPendingCompletionSessionId(null);
+    setSelectedFinding(null);
+    setFindingOriginScreen(null);
+    mergeSessionSummary(detail.session);
+    syncSessionOrder([detail.session, ...sessions.filter((item) => item.id !== detail.session.id)]);
+    setScreen("scan-progress");
+  }, [mergeSessionSummary, sessions, syncSessionOrder]);
+
+  /**
+   * Stops the review the engine is running, if any.
+   *
+   * The engine runs one review at a time, so a review still in flight is what
+   * makes the next start fail with 409. Deleting that session is what signals the
+   * cancellation — the same call the sidebar's delete and the progress screen's
+   * stop already make — and the engine drops the review in response.
+   */
+  const stopRunningReview = useCallback(async (): Promise<void> => {
+    const live = (await listSessions()).find((session) => session.status === "queued" || session.status === "scanning");
+    if (live === undefined) return;
+    await deleteScanSession(live.id);
+    forgetSession(live.id);
+    if (activeSessionId === live.id) resetActiveSessionState();
+  }, [activeSessionId, forgetSession, resetActiveSessionState]);
+
+  /** The toast action behind a 409: stop what is running, then start this one. */
+  const stopThenStart = useCallback(async (payload: StartScanPayload) => {
+    try {
+      await stopRunningReview();
+      await startReviewOn(payload);
+    } catch (error) {
+      toast.error(toAnalystCopy(error instanceof Error ? error.message : "Unable to start the scan"));
+    }
+  }, [startReviewOn, stopRunningReview]);
+
   const handleStartScan = useCallback(async (payload: StartScanPayload) => {
     try {
-      const detail = await startScan(payload);
-      setActiveSession(detail);
-      setActiveSessionId(detail.session.id);
-      setPendingCompletionSessionId(null);
-      setSelectedFinding(null);
-      setFindingOriginScreen(null);
-      mergeSessionSummary(detail.session);
-      syncSessionOrder([detail.session, ...sessions.filter((item) => item.id !== detail.session.id)]);
-      setScreen("scan-progress");
+      await startReviewOn(payload);
     } catch (error) {
+      // One review at a time is the engine's rule, and a refused start used to be
+      // a dead end: the only way forward was to know that the running review had
+      // to be stopped first. The way out is offered as the toast's action.
+      if (error instanceof ApiRequestError && error.status === 409) {
+        toast.error(toAnalystCopy(error.message), {
+          description: "Stop the running review and start this one instead.",
+          action: { label: "Stop and start", onClick: () => { void stopThenStart(payload); } },
+        });
+        return;
+      }
       const message = error instanceof Error ? error.message : "Unable to start the scan";
       toast.error(toAnalystCopy(message));
     }
-  }, [mergeSessionSummary, sessions, syncSessionOrder]);
+  }, [startReviewOn, stopThenStart]);
 
   const handleSelectFinding = useCallback((finding: Finding, originScreen: AppScreen = "scan-completed") => {
     setFindingOriginScreen(originScreen);
@@ -251,7 +294,7 @@ export default function Page() {
       {view === "workspace" ? (
         <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
           <Sidebar sessions={sessions} currentScreen={screen} onNavigate={handleNavigate} activeSessionId={activeSessionId} onOpenSession={handleOpenSession} onDeleteSession={handleDeleteSession} onDeleteAllSessions={handleDeleteAllSessions} onReorderSessions={handleReorderSessions} sessionOrder={sessionOrder} isCollapsed={isSidebarCollapsed} onOpenSettings={() => setView("settings")} />
-          <div className={`relative flex min-h-0 min-w-0 flex-1 overflow-hidden border-b border-l border-r border-border-soft bg-[#121212] shadow-sm transition-[border-radius] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${isSidebarCollapsed ? "rounded-t-[16px]" : "rounded-tl-[16px]"}`}>
+          <div className={`relative flex min-h-0 min-w-0 flex-1 overflow-hidden border-b border-l border-r border-border-soft bg-[#121212] shadow-sm transition-[border-radius] duration-500 ease-smooth ${isSidebarCollapsed ? "rounded-t-[16px]" : "rounded-tl-[16px]"}`}>
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               {sessionWorkspaceTabs.length > 0 && <SessionWorkspaceTabs session={activeSession} currentScreen={screen} tabs={sessionWorkspaceTabs} onNavigate={(s) => setScreen(s)} />}
               <div className="flex min-h-0 min-w-0 flex-1">{renderContent()}</div>
@@ -354,9 +397,9 @@ function SessionWorkspaceTabs({ session, currentScreen, tabs, onNavigate }: { se
               <button
                 key={tab.screen}
                 onClick={(e) => handleTabClick(e, tab.screen)}
-                className={`shrink-0 border-b-2 pb-3 text-[13px] font-medium transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${active ? "border-txt-primary text-txt-primary" : "border-transparent text-txt-tertiary hover:text-txt-primary"}`}
+                className={`shrink-0 border-b-2 pb-3 text-[13px] font-medium transition-all duration-500 ease-smooth ${active ? "border-txt-primary text-txt-primary" : "border-transparent text-txt-tertiary hover:text-txt-primary"}`}
               >
-                <span className={`inline-block transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${active ? "translate-y-0 opacity-100" : "translate-y-0 opacity-80"}`}>{tab.label}</span>
+                <span className={`inline-block transition-all duration-500 ease-smooth ${active ? "translate-y-0 opacity-100" : "translate-y-0 opacity-80"}`}>{tab.label}</span>
               </button>
             );
           })}

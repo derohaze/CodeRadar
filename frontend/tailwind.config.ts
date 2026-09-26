@@ -70,6 +70,12 @@ export default {
           placeholder: "hsl(var(--text-placeholder))",
         },
       },
+      transitionTimingFunction: {
+        // The one curve the UI uses. Named so `ease-[cubic-bezier(...)]` is not
+        // repeated in every component, and so Tailwind can resolve it without
+        // guessing which property an arbitrary value belongs to.
+        smooth: "cubic-bezier(0.4, 0, 0.2, 1)",
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",

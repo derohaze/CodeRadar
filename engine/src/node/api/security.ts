@@ -53,6 +53,8 @@ export interface SecurityEnvelope {
   /** The secret this request presents, from the header or the query string. */
   presentedToken(request: IncomingMessage, url: URL): string | null;
   sendJson(request: IncomingMessage, response: ServerResponse, status: number, body: unknown): void;
+  /** Answers with a document rather than data; only the report route renders one. */
+  sendHtml(request: IncomingMessage, response: ServerResponse, status: number, html: string): void;
   sendError(request: IncomingMessage, response: ServerResponse, status: number, detail: string): void;
   /** Turns a thrown value into the response a failed request should get. */
   sendFailure(request: IncomingMessage, response: ServerResponse, status: number, error: unknown): void;
@@ -117,6 +119,25 @@ export function createSecurityEnvelope(options: SecurityEnvelopeOptions = {}): S
     response.end(payload);
   }
 
+  /**
+   * A rendered document.
+   *
+   * The same envelope rules as JSON, plus one: `nosniff`, so a browser cannot be
+   * talked into treating the page as another type. The report is a rendering of
+   * one session and is never cached — `no-store` also keeps the launch token in
+   * the request line out of any shared cache.
+   */
+  function sendHtml(request: IncomingMessage, response: ServerResponse, status: number, html: string): void {
+    response.writeHead(status, {
+      ...corsHeaders(request),
+      "content-type": "text/html; charset=utf-8",
+      "x-content-type-options": "nosniff",
+      "cache-control": "no-store",
+      "content-length": Buffer.byteLength(html),
+    });
+    response.end(html);
+  }
+
   function sendError(request: IncomingMessage, response: ServerResponse, status: number, detail: string): void {
     sendJson(request, response, status, { detail });
   }
@@ -168,6 +189,7 @@ export function createSecurityEnvelope(options: SecurityEnvelopeOptions = {}): S
     hostIsLoopback,
     presentedToken,
     sendJson,
+    sendHtml,
     sendError,
     sendFailure,
     readJsonBody,

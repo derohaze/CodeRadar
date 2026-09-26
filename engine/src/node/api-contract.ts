@@ -34,7 +34,18 @@ import { detectProjectProfile } from "../core/languages/detect.ts";
 export type WireSeverity = "critical" | "high" | "medium" | "low";
 export type WireScanMode = "fast" | "deep";
 export type WirePreset = "safe" | "balanced" | "aggressive";
-export type WireSessionStatus = "queued" | "scanning" | "completed" | "failed";
+export type WireSessionStatus = "queued" | "scanning" | "completed" | "failed" | "cancelled";
+
+/**
+ * The statuses a session is over in, however it ended.
+ *
+ * `cancelled` is terminal and is not `failed`: a review the user stopped produced
+ * no result, but nothing went wrong, and the two need opposite responses from
+ * whoever is reading the screen. One reader of both is the report's timestamps.
+ */
+export function isTerminalSessionStatus(status: WireSessionStatus): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
 
 export interface WireFixSuggestion {
   id: string;
@@ -579,7 +590,7 @@ export function buildWireScanDetail(session: WireSession, report: ReviewReport |
     review_limitations: (report?.limitations ?? []).map(toWireLimitation),
     ai_review: toWireAiReview(report?.stats.aiReview ?? null),
     verdict: findings.length === 0 ? "safe" : "issues_found",
-    completed_at: session.status === "completed" || session.status === "failed" ? session.updated_at : null,
+    completed_at: isTerminalSessionStatus(session.status) ? session.updated_at : null,
     error_message: errorMessage,
   };
 }

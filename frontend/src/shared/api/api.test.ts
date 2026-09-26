@@ -1,6 +1,33 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { explainFinding, getRepoHotspots, getScanSession } from "./index";
 
+describe("the report page address", () => {
+  it("addresses one session's report and carries the launch token a page cannot send in a header", async () => {
+    const original = window.electronAPI;
+    vi.resetModules();
+    window.electronAPI = {
+      platform: "linux",
+      versions: { node: "22.0.0", chrome: "130.0.0", electron: "41.0.0" },
+      apiBaseUrl: "http://127.0.0.1:4321/api/v1",
+      apiToken: "launch-token",
+    };
+
+    try {
+      const { scanReportUrl } = await import("./endpoints/sessions");
+
+      expect(scanReportUrl("session-1")).toBe(
+        "http://127.0.0.1:4321/api/v1/scans/session-1/report?token=launch-token",
+      );
+      // An id is opaque and may need escaping; the path must survive it.
+      expect(scanReportUrl("a/b c")).toBe(
+        "http://127.0.0.1:4321/api/v1/scans/a%2Fb%20c/report?token=launch-token",
+      );
+    } finally {
+      window.electronAPI = original;
+    }
+  });
+});
+
 describe("review API error handling", () => {
   afterEach(() => {
     vi.restoreAllMocks();

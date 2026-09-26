@@ -36,6 +36,16 @@ import type { PublicSettings, SettingsPatch, SettingsStore } from "./settings.ts
 const REVIEW_MAX_ATTEMPTS = 3;
 const REVIEW_RETRY_DELAY_MS = 1_000;
 
+/**
+ * How long a cancelled review is given to unwind before its canceller is released.
+ *
+ * Cancellation is observed by the stages that check the signal, not the instant
+ * the signal is aborted, so the slot is only genuinely free once the review has
+ * returned. Bounded, because a stage that ignores the signal must not hold a
+ * request open.
+ */
+const CANCEL_SETTLE_TIMEOUT_MS = 2_000;
+
 export class ReviewCancelledError extends Error {
   constructor() {
     super("The review was cancelled.");
@@ -98,7 +108,14 @@ export interface ReviewService {
   listModels(overrides?: ProviderOverrides): Promise<ProviderModel[]>;
   testProvider(overrides?: ProviderOverrides): Promise<ProviderTestResult>;
   startReview(request: ReviewServiceRequest, onEvent?: ReviewEventSink): Promise<ReviewServiceResult>;
-  cancelReview(): void;
+  /**
+   * Aborts the review in flight and resolves once it has actually let the slot go.
+   *
+   * Resolving on the abort alone would be a lie the caller acts on: a caller that
+   * stops one review and immediately starts another would race the slot it just
+   * freed and be refused with "a review is already running".
+   */
+  cancelReview(): Promise<void>;
   isRunning(): boolean;
   readSource(request: SourceWindowRequest): Promise<SourceWindow>;
 }
@@ -122,6 +139,8 @@ export function createReviewService(options: ReviewServiceOptions): ReviewServic
 
   let running = false;
   let controller: AbortController | null = null;
+  /** Resolves when the review in flight has released the slot, for a canceller. */
+  let settledRun: Promise<void> | null = null;
   let lastPathBase: string | null = null;
 
   /**
@@ -246,6 +265,11 @@ export function createReviewService(options: ReviewServiceOptions): ReviewServic
       if (running) throw new Error("A review is already running.");
 
       controller = new AbortController();
+      let releaseRun: () => void = () => undefined;
+      const runSettled = new Promise<void>((resolve) => {
+        releaseRun = resolve;
+      });
+      settledRun = runSettled;
 
       try {
         // Taken after the guard but before anything can fail. A lock taken before
@@ -290,11 +314,16 @@ export function createReviewService(options: ReviewServiceOptions): ReviewServic
       } finally {
         running = false;
         controller = null;
+        settledRun = null;
+        releaseRun();
       }
     },
 
-    cancelReview(): void {
+    async cancelReview(): Promise<void> {
+      const settled = settledRun;
       controller?.abort();
+      if (settled === null) return;
+      await Promise.race([settled, new Promise<void>((resolve) => setTimeout(resolve, CANCEL_SETTLE_TIMEOUT_MS))]);
     },
 
     isRunning: () => running,

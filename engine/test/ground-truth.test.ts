@@ -10,12 +10,12 @@ import {
   formatEvaluation,
   parseGroundTruth,
   readReviewReport,
-} from "../src/eval/ground-truth.ts";
+} from "../src/eval/index.ts";
 import type {
   ReportFileTraceLike,
   ReportFindingLike,
   ReviewReportLike,
-} from "../src/eval/ground-truth.ts";
+} from "../src/eval/index.ts";
 
 const PROMPTS_DIR = path.join(import.meta.dir, "..", "prompts");
 const FIXTURES = path.join(import.meta.dir, "fixtures");

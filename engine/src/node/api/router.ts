@@ -9,13 +9,15 @@
  * security change, not a refactor.
  *
  * Routes are tried in order and the first one that recognises the request
- * answers it, so a new route file is added to `ROUTES` and nothing else changes.
+ * answers it, so a new route file is added to `ROUTE_GROUPS` and nothing else
+ * changes.
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ApiContext, RouteHandler, RouteRequest } from "./context.ts";
 import { repoInsightsRoutes } from "./routes/repo-insights.ts";
 import { remediationRoutes } from "./routes/remediation.ts";
+import { reportRoutes } from "./routes/report.ts";
 import { scansRoutes } from "./routes/scans.ts";
 import { sessionsRoutes } from "./routes/sessions.ts";
 import { settingsRoutes } from "./routes/settings.ts";
@@ -23,12 +25,23 @@ import { API_PREFIX, type SecurityEnvelope } from "./security.ts";
 import type { SessionStore } from "./session-store.ts";
 import type { ReviewService } from "../service.ts";
 
-const ROUTES: readonly RouteHandler[] = [
-  sessionsRoutes,
-  repoInsightsRoutes,
-  scansRoutes,
-  settingsRoutes,
-  remediationRoutes,
+/**
+ * One route group, named so the startup banner can print the real order rather
+ * than a copy of it that can drift.
+ */
+export interface RouteGroup {
+  readonly name: string;
+  readonly handler: RouteHandler;
+}
+
+/** Tried in this order; the first group that recognises the request answers it. */
+export const ROUTE_GROUPS: readonly RouteGroup[] = [
+  { name: "sessions", handler: sessionsRoutes },
+  { name: "repo-insights", handler: repoInsightsRoutes },
+  { name: "report", handler: reportRoutes },
+  { name: "scans", handler: scansRoutes },
+  { name: "settings", handler: settingsRoutes },
+  { name: "remediation", handler: remediationRoutes },
 ];
 
 export interface RouterOptions {
@@ -94,8 +107,8 @@ export function createRouter(options: RouterOptions): (request: IncomingMessage,
       suffix: path.slice(API_PREFIX.length),
     };
 
-    for (const handler of ROUTES) {
-      if (await handler(routeRequest)) return;
+    for (const group of ROUTE_GROUPS) {
+      if (await group.handler(routeRequest)) return;
     }
 
     options.security.sendError(request, response, 404, "Unknown endpoint.");

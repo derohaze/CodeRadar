@@ -23,7 +23,7 @@ import {
   formatEvaluation,
   parseGroundTruth,
   readReviewReport,
-} from "../src/eval/ground-truth.ts";
+} from "../src/eval/index.ts";
 
 const ENGINE_DIR = path.join(import.meta.dir, "..");
 const args = process.argv.slice(2);

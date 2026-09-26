@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, FileText } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { Finding } from "@/entities/finding/model/types";
@@ -21,7 +21,12 @@ import {
   getReviewStateLabel,
   isReviewComplete,
 } from "@/entities/session/lib/review-state";
-import type { RejectedCandidateSummary, ReviewLimitationSummary, ScanSessionDetail } from "@/shared/api";
+import {
+  scanReportUrl,
+  type RejectedCandidateSummary,
+  type ReviewLimitationSummary,
+  type ScanSessionDetail,
+} from "@/shared/api";
 import { toAnalystCopy } from "@/shared/lib/analyst-copy";
 import { CopyButton } from "@/shared/ui/CopyButton";
 
@@ -49,6 +54,10 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
   // unreported one looks identical in a findings count, which is why it is read
   // from the state the engine recorded.
   const reviewComplete = isReviewComplete(session.reviewState);
+  // A page only exists once a run produced a report: a review still running has
+  // none, and a failed one has nothing to render. `failed` is the wire's word for
+  // "no report at all", so it is the one state that rules the page out.
+  const hasReport = session.reviewState !== null && session.reviewState !== "failed";
   const cleanReview = safeVerdict && reviewComplete;
   const approvalQueue = buildApprovalQueue(orderedValidatedFindings);
   const approvalQueuedFindingIds = new Set(approvalQueue.map((item) => item.findingId));
@@ -94,6 +103,17 @@ export function ScanResultsScreen({ session, onSelectFinding }: Props) {
             </p>
           </div>
           <div className="flex items-center gap-2 text-txt-secondary">
+            {hasReport && (
+              <button
+                type="button"
+                onClick={() => window.open(scanReportUrl(session.session.id), "_blank", "noopener,noreferrer")}
+                className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3.5 py-1.5 text-xs font-medium text-txt-primary transition-colors hover:bg-muted"
+                style={{ borderColor: "hsl(var(--border-soft))" }}
+              >
+                <FileText size={14} />
+                Full report
+              </button>
+            )}
             <CheckCircle2 size={15} className={cleanReview ? "text-status-success" : "text-txt-secondary"} />
             <span className="text-sm font-medium text-txt-primary">
               {cleanReview ? "Reviewed" : reviewComplete ? "Completed" : getReviewStateLabel(session.reviewState)}

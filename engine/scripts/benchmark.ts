@@ -63,8 +63,8 @@ import {
   evaluationToJson,
   formatDiagnosis,
   parseGroundTruth,
-} from "../src/eval/ground-truth.ts";
-import type { DefectDiagnosis, GroundTruth, ReviewEvaluation } from "../src/eval/ground-truth.ts";
+} from "../src/eval/index.ts";
+import type { DefectDiagnosis, GroundTruth, ReviewEvaluation } from "../src/eval/index.ts";
 
 const ENGINE_DIR = path.join(import.meta.dir, "..");
 const PROMPTS_DIR = path.join(ENGINE_DIR, "prompts");

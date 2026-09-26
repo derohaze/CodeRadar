@@ -7,7 +7,7 @@
  * main process also accepts from the environment, so one command can wire the two
  * together without either knowing about the other.
  *
- * Two deliberate choices:
+ * Three deliberate choices:
  *
  * - **Settings live in the OS user-data directory**, the same one the packaged
  *   app uses, so a provider configured in a dev session is the provider the
@@ -15,15 +15,24 @@
  * - **The port defaults to 9000**, which is what the renderer falls back to when
  *   nothing tells it otherwise, so `curl` and a plain browser session both work
  *   with no configuration. Pass `0` to let the OS pick.
+ * - **Output is plain and greppable.** A short block states where the API is,
+ *   where its settings live and what it is running on; after that it is one
+ *   access-log line per request. No box drawing, no decoration — a log is read
+ *   by a person and by `grep`.
  *
  * The printed block is machine-readable on purpose: the dev orchestrator parses
  * `CODE_RADAR_API_URL=` and `CODE_RADAR_API_TOKEN=` instead of guessing a port.
+ * Those two lines are a contract — `frontend/scripts/dev.mjs` reads them — so
+ * they keep their exact shape no matter what is printed around them.
  */
 
 import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { startReviewApiServer } from "./api/server.ts";
+import type { RequestLogEntry } from "./api/server.ts";
+import { ROUTE_GROUPS } from "./api/router.ts";
+import { API_PREFIX } from "./api/security.ts";
 import { createLocalKeyCipher } from "./local-cipher.ts";
 import { createReviewService, resolvePromptsDir } from "./service.ts";
 import { createSettingsStore } from "./settings.ts";
@@ -40,6 +49,68 @@ function defaultSettingsDir(): string {
     return path.join(os.homedir(), "Library", "Application Support", appName);
   }
   return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), appName);
+}
+
+/*
+ * Colour is limited to the status code, which is the one field an operator scans
+ * for. It is never forced: a piped stdout (`bun run dev:all` prefixes and
+ * forwards these lines) and a `NO_COLOR` environment both get plain text, so a
+ * captured log stays readable and greppable.
+ */
+const SGR = {
+  reset: "\u001b[0m",
+  red: "\u001b[31m",
+  green: "\u001b[32m",
+  yellow: "\u001b[33m",
+} as const;
+
+function useColour(): boolean {
+  return process.stdout.isTTY === true && process.env["NO_COLOR"] === undefined;
+}
+
+/** Colours an already-padded status, so the column still lines up. */
+function colourStatus(padded: string, status: number): string {
+  if (!useColour()) return padded;
+  const code = status >= 500 ? SGR.red : status >= 400 ? SGR.yellow : SGR.green;
+  return `${code}${padded}${SGR.reset}`;
+}
+
+/** `bun 1.4.2 (node 26.3.0), win32 x64, pid 205952` — what a bug report needs. */
+function runtimeSummary(): string {
+  const bun = (process.versions as Record<string, string | undefined>)["bun"];
+  const runtime = bun === undefined ? `node ${process.versions.node}` : `bun ${bun} (node ${process.versions.node})`;
+  return `${runtime}, ${process.platform} ${process.arch}, pid ${process.pid}`;
+}
+
+function printBanner(info: { url: string; token: string; settingsPath: string }): void {
+  const row = (label: string, value: string): string => `  ${label.padEnd(10)} ${value}\n`;
+
+  process.stdout.write(
+    "CodeRadar review engine\n\n" +
+      row("API", info.url) +
+      row("Settings", info.settingsPath) +
+      row("Runtime", runtimeSummary()) +
+      row("Token", `${info.token.slice(0, 12)}... (full value below)`) +
+      // Read from the router, so this cannot drift from the order requests are
+      // actually tried in.
+      row("Routes", ROUTE_GROUPS.map((group) => group.name).join(", ")) +
+      "\n",
+  );
+}
+
+/** One access-log line per finished request: time, method, path, status, duration. */
+function printRequest(entry: RequestLogEntry): void {
+  const now = new Date();
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  const stamp =
+    `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ` +
+    `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const path = entry.path.length > 46 ? `${entry.path.slice(0, 45)}...` : entry.path;
+
+  process.stdout.write(
+    `  ${stamp}  ${entry.method.padEnd(7)} ${path.padEnd(46)} ` +
+      `${colourStatus(String(entry.status).padStart(3), entry.status)} ${String(entry.durationMs).padStart(5)}ms\n`,
+  );
 }
 
 export interface StandaloneServer {
@@ -66,25 +137,28 @@ export async function startStandaloneServer(env: NodeJS.ProcessEnv = process.env
     service,
     token: env["CODE_RADAR_API_TOKEN"] ?? randomBytes(32).toString("hex"),
     port,
+    logRequest: printRequest,
   });
 
   return {
-    url: `${server.origin}/api/v1`,
+    url: `${server.origin}${API_PREFIX}`,
     token: server.token,
     close: () => server.close(),
   };
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const server = await startStandaloneServer();
+  const settingsPath = path.join(process.env["CODE_RADAR_SETTINGS_DIR"] ?? defaultSettingsDir(), "settings.json");
 
-  // Greppable, so the dev orchestrator never has to guess a port.
+  printBanner({ url: server.url, token: server.token, settingsPath });
+
+  // Greppable, so the dev orchestrator never has to guess a port. Changing the
+  // shape of these two lines breaks `frontend/scripts/dev.mjs`.
   process.stdout.write(
-    `\nCodeRadar review engine is running.\n` +
-      `\n  API      ${server.url}\n` +
-      `  Settings ${path.join(process.env["CODE_RADAR_SETTINGS_DIR"] ?? defaultSettingsDir(), "settings.json")}\n` +
-      `\nCODE_RADAR_API_URL=${server.url}\nCODE_RADAR_API_TOKEN=${server.token}\n\n` +
-      `Every route except /health/live needs the token above, for example:\n` +
+    `CODE_RADAR_API_URL=${server.url}\n` +
+      `CODE_RADAR_API_TOKEN=${server.token}\n\n` +
+      `Every route except ${API_PREFIX}/health/live needs the token above, for example:\n` +
       `  curl -H "x-coderadar-token: ${server.token}" ${server.url}/settings/providers\n\n` +
       `Press Ctrl+C to stop.\n\n`,
   );

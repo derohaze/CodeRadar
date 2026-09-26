@@ -74,6 +74,10 @@ export { dedupeFindings, tokenSimilarity, tokenise } from "./core/findings/dedup
 export { ReviewEngine } from "./core/review/engine.ts";
 export type { ReviewEngineOptions, ReviewRequest } from "./core/review/engine.ts";
 
+// The report as a document: the same run, in a form a person can open and share.
+export { renderReviewReportHtml } from "./core/review/report/html.ts";
+export type { ReviewReportHtmlOptions } from "./core/review/report/html.ts";
+
 // Ports
 export type {
   AiReviewerPort,
